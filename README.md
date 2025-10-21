@@ -369,6 +369,19 @@ Feel free to check [issues page](https://github.com/adil-mohammad-dev/foodhub-re
 
 **Made with ❤️ for the restaurant industry**
 
+---
+
+## 🙏 Special Thanks
+
+**GitHub & GitHub Copilot** - For providing an incredible platform and AI-powered development assistance that made this project possible.
+
+[![GitHub](https://img.shields.io/badge/Powered_by-GitHub-181717?style=for-the-badge&logo=github)](https://github.com)
+[![GitHub Copilot](https://img.shields.io/badge/Built_with-GitHub_Copilot-000000?style=for-the-badge&logo=github)](https://github.com/features/copilot)
+
+*This project was developed with assistance from GitHub Copilot AI, showcasing the power of AI-assisted development in creating production-ready applications.*
+
+---
+
 © 2025 Mohammad Adil | FoodHub Restaurant Management System
 
 </div>

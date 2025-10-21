@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reservations</title>
+<link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+<h2>Book Your Table</h2>
+<form id="reservationForm">
+  <input type="text" name="name" placeholder="Name" required><br>
+  <input type="email" name="email" placeholder="Email" required><br>
+  <input type="text" name="phone" placeholder="Phone" required><br>
+  <input type="date" name="date" required><br>
+  <input type="time" name="time" required><br>
+  <input type="number" name="people" placeholder="People" required><br>
+  <select name="occasion" required>
+    <option value="">Select Occasion</option>
+    <option value="Birthday">Birthday</option>
+    <option value="Anniversary">Anniversary</option>
+    <option value="Other">Other</option>
+  </select><br>
+  <select name="meal_type" required>
+    <option value="">Select Meal Type</option>
+    <option value="Veg">Veg</option>
+    <option value="Non-Veg">Non-Veg</option>
+  </select><br>
+  <select name="payment_mode" required>
+    <option value="Cash">Cash</option>
+    <option value="Online">Online</option>
+  </select><br>
+  <textarea name="message" placeholder="Message (Optional)"></textarea><br>
+  <button type="submit">Reserve my Table</button>
+</form>
+
+<div id="reservation-popup" class="popup">
+  <span id="reservation-popup-message"></span>
+  <button id="reservation-popup-close">Close</button>
+</div>
+
+<script src="assets/js/reservation.js"></script>
+</body>
+</html>

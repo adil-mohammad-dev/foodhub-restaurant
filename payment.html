@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>Payment - FoodHub Restaurant</title>
+  
+  <!-- Favicons -->
+  <link href="assets/img/favicon.ico" rel="icon">
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com" rel="preconnect">
+  <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+  
+  <!-- Vendor CSS Files -->
+  <link href="assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
+  
+  <!-- Main CSS File -->
+  <link href="assets/css/main.css" rel="stylesheet">
+  
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Poppins', sans-serif;
+    }
+    
+    .payment-container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+      max-width: 500px;
+      width: 90%;
+      margin: 20px;
+    }
+    
+    .payment-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .payment-header h2 {
+      color: #333;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    
+    .payment-header p {
+      color: #666;
+      font-size: 14px;
+    }
+    
+    .amount-box {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 15px;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .amount-box h3 {
+      font-size: 16px;
+      margin-bottom: 10px;
+      opacity: 0.9;
+    }
+    
+    .amount-box .amount {
+      font-size: 42px;
+      font-weight: bold;
+    }
+    
+    .payment-methods {
+      margin-bottom: 30px;
+    }
+    
+    .payment-method {
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 15px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .payment-method:hover {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+    
+    .payment-method.active {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+    
+    .payment-method input[type="radio"] {
+      width: 20px;
+      height: 20px;
+      accent-color: #667eea;
+    }
+    
+    .payment-method-info {
+      flex: 1;
+    }
+    
+    .payment-method-info h4 {
+      margin: 0 0 5px 0;
+      color: #333;
+      font-size: 16px;
+    }
+    
+    .payment-method-info p {
+      margin: 0;
+      color: #666;
+      font-size: 13px;
+    }
+    
+    .btn-pay {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      border-radius: 30px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: transform 0.2s;
+    }
+    
+    .btn-pay:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-pay:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .reservation-info {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    
+    .reservation-info p {
+      margin: 5px 0;
+      color: #555;
+    }
+    
+    .back-link {
+      text-align: center;
+      margin-top: 20px;
+    }
+    
+    .back-link a {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    
+    .back-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="payment-container">
+    <div class="payment-header">
+      <h2>Complete Your Payment</h2>
+      <p>Secure your table reservation with advance payment</p>
+    </div>
+    
+    <div class="amount-box">
+      <h3>Advance Booking Amount</h3>
+      <div class="amount">₹<span id="paymentAmount">500</span></div>
+    </div>
+    
+    <div class="reservation-info">
+      <p><strong>Reservation ID:</strong> <span id="reservationId">-</span></p>
+      <p><strong>Note:</strong> This is an advance payment to confirm your reservation.</p>
+    </div>
+    
+    <div class="payment-methods">
+      <h4 style="margin-bottom: 15px; color: #333;">Select Payment Method</h4>
+      
+      <label class="payment-method active">
+        <input type="radio" name="payment" value="upi" checked>
+        <div class="payment-method-info">
+          <h4>UPI Payment</h4>
+          <p>Pay using Google Pay, PhonePe, Paytm</p>
+        </div>
+      </label>
+      
+      <label class="payment-method">
+        <input type="radio" name="payment" value="card">
+        <div class="payment-method-info">
+          <h4>Credit/Debit Card</h4>
+          <p>Visa, Mastercard, RuPay accepted</p>
+        </div>
+      </label>
+      
+      <label class="payment-method">
+        <input type="radio" name="payment" value="netbanking">
+        <div class="payment-method-info">
+          <h4>Net Banking</h4>
+          <p>Pay directly from your bank account</p>
+        </div>
+      </label>
+    </div>
+    
+    <button class="btn-pay" id="payBtn">
+      <i class="bi bi-lock-fill"></i> Proceed to Pay ₹<span id="payAmount">500</span>
+    </button>
+    
+    <div class="back-link">
+      <a href="index.html">← Back to Home</a>
+    </div>
+    
+    <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+      <p style="font-size: 12px; color: #888; margin: 5px 0;">Developed by</p>
+      <a href="https://adil-mohammad-dev.github.io/personal-portfolio/" target="_blank" 
+         style="color: #667eea; text-decoration: none; font-weight: 600; font-size: 14px;">
+        Mohammad Adil
+      </a>
+    </div>
+  </div>
+
+  <script>
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const reservationId = urlParams.get('id');
+    const amount = urlParams.get('amount') || '500';
+    
+    // Update display
+    document.getElementById('reservationId').textContent = reservationId || 'N/A';
+    document.getElementById('paymentAmount').textContent = amount;
+    document.getElementById('payAmount').textContent = amount;
+    
+    // Handle payment method selection
+    const paymentMethods = document.querySelectorAll('.payment-method');
+    paymentMethods.forEach(method => {
+      method.addEventListener('click', function() {
+        paymentMethods.forEach(m => m.classList.remove('active'));
+        this.classList.add('active');
+        this.querySelector('input[type="radio"]').checked = true;
+      });
+    });
+    
+    // Handle payment button
+    document.getElementById('payBtn').addEventListener('click', async function() {
+      const selectedMethod = document.querySelector('input[name="payment"]:checked').value;
+      const btn = this;
+      
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+      
+      // Simulate payment processing
+      setTimeout(() => {
+        // In a real application, you would integrate with a payment gateway here
+        // For demo purposes, we'll just show success
+        alert(`Payment of ₹${amount} successful via ${selectedMethod.toUpperCase()}!\n\nReservation ID: ${reservationId}\n\nYou will receive a confirmation email shortly.`);
+        
+        // Redirect to home page
+        window.location.href = 'index.html';
+      }, 2000);
+    });
+  </script>
+  
+  <script src="assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

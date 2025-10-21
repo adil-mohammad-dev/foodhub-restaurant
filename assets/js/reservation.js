@@ -1,3 +1,8 @@
+/**
+ * FoodHub Restaurant - Reservation Form Handler
+ * Author: Mohammad Adil
+ */
+
 document.addEventListener("DOMContentLoaded", () => {
   const reservationForm = document.getElementById("reservationForm");
   const submitBtn = reservationForm.querySelector("button[type='submit']");
@@ -39,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
       occasion: reservationForm.occasion.value,
       meal_type: reservationForm.meal_type.value,
       payment_mode: reservationForm.payment_mode.value,
+      delivery_option: "Dine-in", // Always Dine-in for table reservations
       message: reservationForm.message.value
     };
 
@@ -73,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }, 1500);
         } else {
           // Cash payment - just show success
-          showPopup("Reservation successful! Please pay at the restaurant. We will contact you soon.", true);
+          showPopup("Table reservation successful! We will contact you soon. Check your email for confirmation.", true);
           reservationForm.reset();
         }
       } else {

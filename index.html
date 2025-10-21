@@ -27,6 +27,51 @@
   <!-- Main CSS File -->
   <link href="assets/css/main.css" rel="stylesheet">
 
+  <style>
+    .menu-items-container {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .menu-item-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .menu-item-row input,
+    .menu-item-row select {
+      flex: 1;
+      min-width: 0;
+    }
+    .menu-item-row .btn-remove {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .menu-item-row .btn-remove:hover {
+      background: #c82333;
+    }
+    #addMenuItem {
+      background: #cda45e;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #addMenuItem:hover {
+      background: #b8935c;
+    }
+  </style>
+
   <!-- =======================================================
   * Template Name: FoodHub Restaurant
   * Template URL: 
@@ -95,6 +140,7 @@
         </nav>
 
         <a class="btn-book-a-table d-none d-xl-block" href="#book-a-table">Book a Table</a>
+        <a class="btn-book-a-table d-none d-xl-block" href="order.html" style="margin-left: 15px;">Order Online</a>
 
       </div>
 
@@ -117,6 +163,7 @@
             <div class="d-flex mt-4" data-aos="fade-up" data-aos-delay="300">
               <a href="#menu" class="cta-btn">Our Menu</a>
               <a href="#book-a-table" class="cta-btn">Book a Table</a>
+              <a href="order.html" class="cta-btn">Order Online</a>
             </div>
           </div>
           <!-- <div class="col-lg-4 d-flex align-items-center justify-content-center mt-5 mt-lg-0">
@@ -624,7 +671,7 @@
               </select>
             </div>
             <div class="col-lg-4 col-md-6">
-              <select name="payment_mode" id="payment_mode" class="form-select">
+              <select name="payment_mode" id="payment_mode" class="form-select" required="">
                 <option value="">Select Payment Mode</option>
                 <option value="Online">Pay Online (Advance)</option>
                 <option value="Cash">Pay at Restaurant</option>
@@ -633,7 +680,7 @@
           </div>
 
           <div class="form-group mt-3">
-            <textarea class="form-control" name="message" rows="5" placeholder="Message" style="border: 1px solid white;"></textarea>
+            <textarea class="form-control" name="message" id="message" rows="5" placeholder="Special Requests (Optional)" style="border: 1px solid white;"></textarea>
           </div>
 
           <div class="text-center mt-3">

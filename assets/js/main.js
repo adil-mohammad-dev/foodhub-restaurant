@@ -1,3 +1,7 @@
+/**
+ * FoodHub Restaurant - Main JavaScript
+ * Author: Mohammad Adil
+ */
 
 (function() {
   "use strict";

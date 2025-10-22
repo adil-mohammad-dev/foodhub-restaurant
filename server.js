@@ -544,33 +544,41 @@ app.post('/reserve/request-otp', (req, res) => {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     const reservationData = JSON.stringify({ name, email: email.trim(), phone: phoneNorm, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address });
 
-    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otp, expiresAt.toISOString()], function(err) {
+    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otp, expiresAt.toISOString()], async function(err) {
       if (err) return res.status(500).json({ success: false, message: 'Failed to create OTP.' });
       const otpId = this.lastID;
 
-      // Send OTP by email
-      const mailOptions = {
-        from: `"FoodHub" <${process.env.EMAIL_USER}>`,
-        to: email.trim(),
-        subject: 'Your FoodHub reservation OTP',
-        text: `Your OTP for confirming reservation is: ${otp}. It expires in 10 minutes.`
-      };
+        // Send OTP by email (promisified)
+        const mailOptions = {
+          from: `"FoodHub" <${process.env.EMAIL_USER}>`,
+          to: email.trim(),
+          subject: 'Your FoodHub reservation OTP',
+          text: `Your OTP for confirming reservation is: ${otp}. It expires in 10 minutes.`
+        };
 
-      transporter.sendMail(mailOptions, (error, info) => {
-        if (error) console.log('Failed to send OTP email:', error.message);
-        else console.log('OTP email sent:', info && info.response);
-      });
+        const sendMailAsync = (opts) => new Promise((resolve) => {
+          transporter.sendMail(opts, (error, info) => {
+            if (error) return resolve({ ok: false, error: error.message });
+            return resolve({ ok: true, response: info && info.response });
+          });
+        });
 
-      // Send OTP by SMS if Twilio configured
-      if (twilioClient) {
-        twilioClient.messages.create({
-          body: `Your FoodHub reservation OTP: ${otp}`,
-          from: process.env.TWILIO_FROM_NUMBER,
-          to: '+' + phoneNorm
-        }).then(msg => console.log('OTP SMS sent:', msg && msg.sid)).catch(err => console.log('OTP SMS error:', err.message));
-      }
+        const emailResult = await sendMailAsync(mailOptions);
+        let smsResult = { ok: false, error: 'Twilio not configured' };
+        if (twilioClient) {
+          try {
+            const msg = await twilioClient.messages.create({
+              body: `Your FoodHub reservation OTP: ${otp}`,
+              from: process.env.TWILIO_FROM_NUMBER,
+              to: '+' + phoneNorm
+            });
+            smsResult = { ok: true, sid: msg.sid };
+          } catch (err) {
+            smsResult = { ok: false, error: err.message };
+          }
+        }
 
-      res.json({ success: true, otpId, message: 'OTP sent to email/phone (if configured).', expiresAt: expiresAt.toISOString() });
+        res.json({ success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult });
     });
   } catch (e) {
     console.error('Request OTP error:', e);
@@ -601,26 +609,30 @@ app.post('/reserve/verify-otp', (req, res) => {
       const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
 
       db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], function(err) {
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], async function(err) {
         if (err) return res.status(500).json({ success: false, message: 'Failed to save reservation.' });
         const reservationId = this.lastID;
 
         // Delete OTP row
         db.run(`DELETE FROM otps WHERE id = ?`, [otpId]);
 
-        // Send confirmation email (reuse existing template header)
+        // Send confirmation email (promisified)
         const mailOptions = {
           from: `"FoodHub Restaurant" <${process.env.EMAIL_USER}>`,
           to: email,
           subject: '✅ Table Reservation Confirmed - FoodHub Restaurant',
           text: `Your reservation is confirmed. Reservation ID: ${reservationId}`
         };
-        transporter.sendMail(mailOptions, (error, info) => {
-          if (error) console.log('Error sending confirmation email:', error.message);
-          else console.log('Confirmation email sent:', info && info.response);
+        const sendMailAsync = (opts) => new Promise((resolve) => {
+          transporter.sendMail(opts, (error, info) => {
+            if (error) return resolve({ ok: false, error: error.message });
+            return resolve({ ok: true, response: info && info.response });
+          });
         });
 
-        res.json({ success: true, reservationId, message: 'Reservation confirmed and email sent (if configured).' });
+        const confirmationEmail = await sendMailAsync(mailOptions);
+
+        res.json({ success: true, reservationId, message: 'Reservation confirmed', confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
       });
     });
   } catch (e) {

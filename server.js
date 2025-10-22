@@ -10,6 +10,7 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const bodyParser = require("body-parser");
 const nodemailer = require("nodemailer");
+const cors = require('cors');
 require("dotenv").config();
 
 const app = express();
@@ -29,6 +30,39 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "assets"))); // CSS/JS
 app.use(express.static(__dirname)); // HTML files
+app.use(cors());
+
+// --- Helpers (reusable) ---
+function isValidEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return re.test(email.trim());
+}
+
+function normalizePhone(phone) {
+  if (!phone) return null;
+  const digits = phone.toString().replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  return digits;
+}
+
+function generateOTP(length = 6) {
+  let otp = '';
+  for (let i = 0; i < length; i++) otp += Math.floor(Math.random() * 10).toString();
+  return otp;
+}
+
+// Optional SMS via Twilio if configured
+let twilioClient = null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  try {
+    const twilio = require('twilio');
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  } catch (e) {
+    console.log('Twilio not available (dependency missing) or failed to initialize:', e.message);
+    twilioClient = null;
+  }
+}
 
 // Database setup
 const db = new sqlite3.Database("reservations.db", (err) => {
@@ -108,6 +142,17 @@ db.serialize(() => {
       console.log('Note: delivery_lng column already exists or error:', err.message);
     }
   });
+
+  // Create otps table to store pending OTPs (short-lived)
+  db.run(`CREATE TABLE IF NOT EXISTS otps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_data TEXT,
+    email TEXT,
+    phone TEXT,
+    otp TEXT,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 });
 
 // Admin API key
@@ -162,13 +207,13 @@ app.delete("/api/reservations/:id", (req, res) => {
 });
 
 // Save new reservation (user-facing)
+// Legacy single-step reservation (kept for compatibility) - will validate inputs
 app.post("/reserve", (req, res) => {
   const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
-  
-  console.log('Received reservation:', { name, email, phone, date, time, people, occasion, meal_type, payment_mode, delivery_option, menu_items, delivery_address });
-  
+
+  console.log('Received reservation (legacy endpoint):', { name, email, phone, date, time, people, occasion, meal_type, payment_mode, delivery_option });
+
   if (!name || !email || !phone || !date || !time || !people || !payment_mode) {
-    console.log('Missing required fields');
     return res.status(400).json({ success: false, message: "Missing required fields." });
   }
 
@@ -286,14 +331,46 @@ app.post("/reserve", (req, res) => {
   }
 
   function saveReservation() {
+    // Validation helpers
+    function isValidEmail(email) {
+      if (!email || typeof email !== 'string') return false;
+      // Basic RFC5322-ish regex for common emails
+      const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      return re.test(email.trim());
+    }
+
+    function normalizePhone(phone) {
+      if (!phone) return null;
+      // Remove non-digit characters
+      const digits = phone.toString().replace(/\D/g, '');
+      // Accept international (+country) or local numbers; require 7-15 digits
+      if (digits.length < 7 || digits.length > 15) return null;
+      return digits;
+    }
+
+    // Validate email and phone before inserting
+    if (!isValidEmail(email)) {
+      console.log('Invalid email provided:', email);
+      return res.status(400).json({ success: false, message: 'Invalid email address.' });
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      console.log('Invalid phone provided:', phone);
+      return res.status(400).json({ success: false, message: 'Invalid phone number. Use digits only, 7 to 15 characters.' });
+    }
+
+    // Use normalized phone for storage
+    const phoneToStore = normalizedPhone;
+
     const payment_status = payment_mode === "Cash" ? "not_required" : "pending";
     const finalDeliveryOption = delivery_option || 'Dine-in';
     const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
     const google_maps_link = req.body.google_maps_link || null;
 
     db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address],
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  [name, email.trim(), phoneToStore, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address],
       function (err) {
       if (err) {
         console.error('Database error:', err);
@@ -447,6 +524,113 @@ app.post("/reserve", (req, res) => {
     });
   } // End of saveReservation function
 });
+
+// New OTP-based reservation flow
+// Step 1: Request OTP (creates a pending reservation entry in `otps` table)
+app.post('/reserve/request-otp', (req, res) => {
+  try {
+    const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
+
+    if (!name || !email || !phone || !date || !time || !people || !payment_mode) {
+      return res.status(400).json({ success: false, message: 'Missing required fields.' });
+    }
+
+    if (!isValidEmail(email)) return res.status(400).json({ success: false, message: 'Invalid email.' });
+    const phoneNorm = normalizePhone(phone);
+    if (!phoneNorm) return res.status(400).json({ success: false, message: 'Invalid phone.' });
+
+    // Create OTP and store pending reservation data
+    const otp = generateOTP(6);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const reservationData = JSON.stringify({ name, email: email.trim(), phone: phoneNorm, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address });
+
+    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otp, expiresAt.toISOString()], function(err) {
+      if (err) return res.status(500).json({ success: false, message: 'Failed to create OTP.' });
+      const otpId = this.lastID;
+
+      // Send OTP by email
+      const mailOptions = {
+        from: `"FoodHub" <${process.env.EMAIL_USER}>`,
+        to: email.trim(),
+        subject: 'Your FoodHub reservation OTP',
+        text: `Your OTP for confirming reservation is: ${otp}. It expires in 10 minutes.`
+      };
+
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) console.log('Failed to send OTP email:', error.message);
+        else console.log('OTP email sent:', info && info.response);
+      });
+
+      // Send OTP by SMS if Twilio configured
+      if (twilioClient) {
+        twilioClient.messages.create({
+          body: `Your FoodHub reservation OTP: ${otp}`,
+          from: process.env.TWILIO_FROM_NUMBER,
+          to: '+' + phoneNorm
+        }).then(msg => console.log('OTP SMS sent:', msg && msg.sid)).catch(err => console.log('OTP SMS error:', err.message));
+      }
+
+      res.json({ success: true, otpId, message: 'OTP sent to email/phone (if configured).', expiresAt: expiresAt.toISOString() });
+    });
+  } catch (e) {
+    console.error('Request OTP error:', e);
+    res.status(500).json({ success: false, message: 'Internal server error while requesting OTP.' });
+  }
+});
+
+// Step 2: Verify OTP and finalize reservation
+app.post('/reserve/verify-otp', (req, res) => {
+  try {
+    const { otpId, otp } = req.body;
+    if (!otpId || !otp) return res.status(400).json({ success: false, message: 'otpId and otp required.' });
+
+    db.get(`SELECT * FROM otps WHERE id = ?`, [otpId], (err, row) => {
+      if (err) return res.status(500).json({ success: false, message: 'DB error' });
+      if (!row) return res.status(404).json({ success: false, message: 'OTP not found.' });
+      if (row.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+      if (new Date(row.expires_at) < new Date()) return res.status(400).json({ success: false, message: 'OTP expired.' });
+
+      // Parse reservation data and insert into reservations
+      let data;
+      try { data = JSON.parse(row.reservation_data); } catch (e) { return res.status(500).json({ success: false, message: 'Invalid reservation data.' }); }
+
+      // Prepare columns
+      const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = data;
+      const payment_status = payment_mode === 'Cash' ? 'not_required' : 'pending';
+      const finalDeliveryOption = delivery_option || 'Dine-in';
+      const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
+
+      db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], function(err) {
+        if (err) return res.status(500).json({ success: false, message: 'Failed to save reservation.' });
+        const reservationId = this.lastID;
+
+        // Delete OTP row
+        db.run(`DELETE FROM otps WHERE id = ?`, [otpId]);
+
+        // Send confirmation email (reuse existing template header)
+        const mailOptions = {
+          from: `"FoodHub Restaurant" <${process.env.EMAIL_USER}>`,
+          to: email,
+          subject: '✅ Table Reservation Confirmed - FoodHub Restaurant',
+          text: `Your reservation is confirmed. Reservation ID: ${reservationId}`
+        };
+        transporter.sendMail(mailOptions, (error, info) => {
+          if (error) console.log('Error sending confirmation email:', error.message);
+          else console.log('Confirmation email sent:', info && info.response);
+        });
+
+        res.json({ success: true, reservationId, message: 'Reservation confirmed and email sent (if configured).' });
+      });
+    });
+  } catch (e) {
+    console.error('Verify OTP error:', e);
+    res.status(500).json({ success: false, message: 'Internal server error while verifying OTP.' });
+  }
+});
+
+// Health endpoint
+app.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
 
 // Start server
 app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

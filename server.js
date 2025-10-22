@@ -644,5 +644,10 @@ app.post('/reserve/verify-otp', (req, res) => {
 // Health endpoint
 app.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
 
+// Serve favicon at root to avoid 404 noise
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'assets', 'img', 'favicon.ico'));
+});
+
 // Start server
 app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

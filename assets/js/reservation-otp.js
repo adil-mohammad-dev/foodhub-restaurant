@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[reservation-otp] script loaded');
   const form = document.getElementById('reservationForm');
-  if (!form) return;
+  if (!form) { console.log('[reservation-otp] reservationForm not found'); return; }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -17,20 +18,39 @@ document.addEventListener('DOMContentLoaded', () => {
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending OTP...'; }
 
     try {
+      console.log('[reservation-otp] submitting request-otp', body);
       const res = await fetch('/reserve/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const json = await res.json();
-      if (!json.success) return alert(json.message || 'Failed to request OTP');
 
+      const text = await res.text();
+      let json;
+      try { json = JSON.parse(text); } catch (e) { json = null; }
+
+      if (!res.ok) {
+        console.error('[reservation-otp] server error', res.status, text);
+        alert('Server error: ' + (json && json.message ? json.message : text));
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my Table'; }
+        return;
+      }
+
+      if (!json || !json.success) {
+        console.error('[reservation-otp] request-otp failed', json || text);
+        alert((json && json.message) || 'Failed to request OTP');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my Table'; }
+        return;
+      }
+
+      console.log('[reservation-otp] received otpId', json.otpId);
       // Save otpId to localStorage and redirect to otp page
       localStorage.setItem('otpId', json.otpId);
       window.location.href = '/otp.html';
     } catch (err) {
-      console.error(err);
-      alert('Network error');
+      console.error('[reservation-otp] network error', err);
+      alert('Network error: ' + (err.message || err));
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my Table'; }
     }
   });
 });

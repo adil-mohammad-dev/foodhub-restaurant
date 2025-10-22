@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Use capture phase so this handler runs before other submit listeners
   // Passing `true` as the third argument subscribes to the capture phase
-  form.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', async (e) => {
     e.preventDefault();
     // Prevent other submit handlers (legacy reservation.js) from also running
     if (e.stopImmediatePropagation) e.stopImmediatePropagation();
@@ -54,5 +54,5 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Network error: ' + (err.message || err));
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my Table'; }
     }
-  });
+    }, true);
 });

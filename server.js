@@ -17,13 +17,29 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Email transporter setup
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+let transporter;
+// Prefer SendGrid via SMTP when SENDGRID_API_KEY is provided (recommended for hosting platforms)
+if (process.env.SENDGRID_API_KEY) {
+  transporter = nodemailer.createTransport({
+    host: 'smtp.sendgrid.net',
+    port: 587,
+    secure: false,
+    auth: {
+      user: 'apikey',
+      pass: process.env.SENDGRID_API_KEY
+    }
+  });
+  console.log('Using SendGrid SMTP transport');
+} else {
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+  console.log('Using Gmail SMTP transport');
+}
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -564,7 +580,7 @@ app.post('/reserve/request-otp', (req, res) => {
         });
 
         const emailResult = await sendMailAsync(mailOptions);
-        let smsResult = { ok: false, error: 'Twilio not configured' };
+  let smsResult = { ok: false, error: 'Twilio not configured' };
         if (twilioClient) {
           try {
             const msg = await twilioClient.messages.create({
@@ -578,7 +594,10 @@ app.post('/reserve/request-otp', (req, res) => {
           }
         }
 
-        res.json({ success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult });
+  const resp = { success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult };
+  // In development/testing allow returning the OTP in the response when DEV_SHOW_OTP=1
+  if (process.env.DEV_SHOW_OTP === '1') resp.otp = otp;
+  res.json(resp);
     });
   } catch (e) {
     console.error('Request OTP error:', e);

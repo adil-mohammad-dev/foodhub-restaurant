@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('reservationForm');
   if (!form) { console.log('[reservation-otp] reservationForm not found'); return; }
 
+  // Use capture phase so this handler runs before other submit listeners
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     // Prevent other submit handlers (legacy reservation.js) from also running

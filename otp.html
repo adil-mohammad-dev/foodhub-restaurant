@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enter OTP - FoodHub</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Confirm your reservation</h1>
+    <p>An OTP has been sent to your email and phone. Please enter it below to confirm your booking.</p>
+
+    <div id="status"></div>
+
+    <form id="otpForm">
+      <input type="hidden" id="otpId" name="otpId" />
+      <label for="otp">OTP</label>
+      <input id="otp" name="otp" type="text" maxlength="6" required />
+      <button type="submit">Verify OTP</button>
+    </form>
+
+    <p id="resMessage"></p>
+  </main>
+
+  <script src="assets/js/otp.js"></script>
+</body>
+</html>

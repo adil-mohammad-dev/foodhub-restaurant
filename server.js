@@ -40,6 +40,8 @@ async function sendMailAsync(opts) {
       return { ok: true, response: res && res[0] && res[0].statusCode };
     } catch (err) {
       console.error('[sendMailAsync] SendGrid error:', err && (err.message || err));
+      // <<< CHANGED: log full SendGrid error body for debugging
+      console.error('[sendMailAsync] SendGrid full error body:', err && err.response && err.response.body);
       return { ok: false, error: err && err.message ? err.message : String(err) };
     }
   }

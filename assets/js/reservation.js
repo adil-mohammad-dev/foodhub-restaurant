@@ -76,9 +76,18 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
       });
-      const result = await response.json();
-      
-      if (result.success) {
+
+      // Some servers (or errors) may return HTML (404/500 page). Parse safely.
+      const text = await response.text();
+      let result = null;
+      try { result = JSON.parse(text); } catch (e) {
+        console.error('Expected JSON response from /reserve but received:', text && text.slice ? text.slice(0,200) : text);
+        // Show friendly error to user
+        showPopup('Server returned an unexpected response. Please try again or contact support.', false);
+        return;
+      }
+
+      if (result && result.success) {
         // If payment mode is Online, redirect to payment page
         if (formData.payment_mode === "Online") {
           showPopup("Redirecting to payment gateway...", true);
@@ -91,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
           reservationForm.reset();
         }
       } else {
-        showPopup(result.message || "Something went wrong.", false);
+        showPopup(result && result.message ? result.message : "Something went wrong.", false);
       }
     } catch (error) {
       console.error(error);

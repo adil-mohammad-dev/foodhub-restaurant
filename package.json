@@ -7,10 +7,18 @@
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["restaurant", "reservation", "online-ordering", "nodejs", "express", "sqlite"],
+  "keywords": [
+    "restaurant",
+    "reservation",
+    "online-ordering",
+    "nodejs",
+    "express",
+    "sqlite"
+  ],
   "author": "Mohammad Adil",
   "license": "MIT",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -18,5 +26,8 @@
     "nodemailer": "^7.0.9",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.26.0"
   }
 }

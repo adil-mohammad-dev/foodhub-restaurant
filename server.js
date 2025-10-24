@@ -1,60 +1,73 @@
 /**
- * FoodHub Restaurant - Backend Server
- * Author: Mohammad Adil
- * Description: Node.js + Express server for restaurant reservation and online ordering system
- * Features: Table booking with overlap detection, IST validation, email notifications
+ * Clean server.js for FoodHub
+ * - Uses SendGrid API when SENDGRID_API_KEY is present
+ * - Falls back to nodemailer SMTP when EMAIL_USER/EMAIL_PASS provided
+ * - DEV_SHOW_OTP=1 returns OTP in response for testing
  */
 
-const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
-const bodyParser = require("body-parser");
-const nodemailer = require("nodemailer");
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const bodyParser = require('body-parser');
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+let sendgrid = null;
+try { sendgrid = require('@sendgrid/mail'); } catch (e) { sendgrid = null; }
 const cors = require('cors');
-require("dotenv").config();
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Email transporter setup
-let transporter;
-// Prefer SendGrid via SMTP when SENDGRID_API_KEY is provided (recommended for hosting platforms)
-if (process.env.SENDGRID_API_KEY) {
-  transporter = nodemailer.createTransport({
-    host: 'smtp.sendgrid.net',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'apikey',
-      pass: process.env.SENDGRID_API_KEY
+// Optional SMTP transporter (fallback)
+let transporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
+  console.log('Configured Gmail SMTP transporter (fallback)');
+}
+
+// Unified send helper
+async function sendMailAsync(opts) {
+  console.log('[sendMailAsync] called, to=', opts && opts.to);
+  // Prefer SendGrid API (HTTPS) if available
+  if (process.env.SENDGRID_API_KEY && sendgrid && typeof sendgrid.send === 'function') {
+    try {
+      console.log('[sendMailAsync] using SendGrid API');
+      sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
+      const msg = { to: opts.to, from: opts.from, subject: opts.subject, text: opts.text, html: opts.html };
+      const res = await sendgrid.send(msg);
+      console.log('[sendMailAsync] SendGrid response:', res && res[0] && res[0].statusCode);
+      return { ok: true, response: res && res[0] && res[0].statusCode };
+    } catch (err) {
+      console.error('[sendMailAsync] SendGrid error:', err && (err.message || err));
+      return { ok: false, error: err && err.message ? err.message : String(err) };
     }
+  }
+
+  // Fallback to nodemailer
+  if (!transporter) return { ok: false, error: 'No SMTP transporter configured' };
+  return new Promise((resolve) => {
+    transporter.sendMail(opts, (error, info) => {
+      console.log('[sendMailAsync] SMTP send callback, error=', error, 'info=', info && info.response);
+      if (error) return resolve({ ok: false, error: error && error.message ? error.message : String(error) });
+      return resolve({ ok: true, response: info && info.response });
+    });
   });
-  console.log('Using SendGrid SMTP transport');
-} else {
-  transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-  console.log('Using Gmail SMTP transport');
 }
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "assets"))); // CSS/JS
-app.use(express.static(__dirname)); // HTML files
+app.use(express.static(path.join(__dirname, 'assets')));
+app.use(express.static(__dirname));
 app.use(cors());
 
-// --- Helpers (reusable) ---
+// Helpers
 function isValidEmail(email) {
   if (!email || typeof email !== 'string') return false;
   const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   return re.test(email.trim());
 }
-
 function normalizePhone(phone) {
   if (!phone) return null;
   const digits = phone.toString().replace(/\D/g, '');
@@ -68,98 +81,24 @@ function generateOTP(length = 6) {
   return otp;
 }
 
-// Optional SMS via Twilio if configured
+// Optional Twilio client
 let twilioClient = null;
 if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-  try {
-    const twilio = require('twilio');
-    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  } catch (e) {
-    console.log('Twilio not available (dependency missing) or failed to initialize:', e.message);
-    twilioClient = null;
-  }
+  try { const twilio = require('twilio'); twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN); } catch (e) { twilioClient = null; }
 }
 
-// Database setup
-const db = new sqlite3.Database("reservations.db", (err) => {
-  if (err) console.error("❌ Error opening database:", err);
-  else console.log("✅ Connected to SQLite database.");
-});
+// Database
+const db = new sqlite3.Database('reservations.db', (err) => { if (err) console.error('DB open error', err); else console.log('Connected to reservations.db'); });
 
-// Create table if not exists
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS reservations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      email TEXT,
-      phone TEXT,
-      date TEXT,
-      time TEXT,
-      people INTEGER,
-      occasion TEXT,
-      meal_type TEXT,
-      payment_mode TEXT DEFAULT 'Cash',
-      payment_status TEXT DEFAULT 'pending',
-      message TEXT,
-      status TEXT DEFAULT 'pending',
-      delivery_option TEXT DEFAULT 'Dine-in',
-      menu_items TEXT,
-      delivery_address TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT, email TEXT, phone TEXT, date TEXT, time TEXT, people INTEGER,
+    occasion TEXT, meal_type TEXT, payment_mode TEXT DEFAULT 'Cash', payment_status TEXT DEFAULT 'pending',
+    message TEXT, status TEXT DEFAULT 'pending', delivery_option TEXT DEFAULT 'Dine-in', menu_items TEXT, delivery_address TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   
-  // Add payment columns if they don't exist (for existing databases)
-  db.run(`ALTER TABLE reservations ADD COLUMN payment_mode TEXT DEFAULT 'Cash'`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: payment_mode column already exists or error:', err.message);
-    }
-  });
-  
-  db.run(`ALTER TABLE reservations ADD COLUMN payment_status TEXT DEFAULT 'pending'`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: payment_status column already exists or error:', err.message);
-    }
-  });
-  
-  db.run(`ALTER TABLE reservations ADD COLUMN status TEXT DEFAULT 'pending'`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: status column already exists or error:', err.message);
-    }
-  });
-  
-  // Add new columns for delivery and menu items
-  db.run(`ALTER TABLE reservations ADD COLUMN delivery_option TEXT DEFAULT 'Dine-in'`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: delivery_option column already exists or error:', err.message);
-    }
-  });
-  
-  db.run(`ALTER TABLE reservations ADD COLUMN menu_items TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: menu_items column already exists or error:', err.message);
-    }
-  });
-  
-  db.run(`ALTER TABLE reservations ADD COLUMN delivery_address TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: delivery_address column already exists or error:', err.message);
-    }
-  });
-
-  // Add latitude and longitude columns for delivery location
-  db.run(`ALTER TABLE reservations ADD COLUMN delivery_lat REAL`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: delivery_lat column already exists or error:', err.message);
-    }
-  });
-
-  db.run(`ALTER TABLE reservations ADD COLUMN delivery_lng REAL`, (err) => {
-    if (err && !err.message.includes('duplicate column')) {
-      console.log('Note: delivery_lng column already exists or error:', err.message);
-    }
-  });
-
-  // Create otps table to store pending OTPs (short-lived)
   db.run(`CREATE TABLE IF NOT EXISTS otps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_data TEXT,
@@ -169,503 +108,358 @@ db.serialize(() => {
     expires_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  // archived reservations for audit/restore
+  db.run(`CREATE TABLE IF NOT EXISTS archived_reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,
+    name TEXT, email TEXT, phone TEXT, date TEXT, time TEXT, people INTEGER,
+    occasion TEXT, meal_type TEXT, payment_mode TEXT, payment_status TEXT,
+    message TEXT, status TEXT, delivery_option TEXT, menu_items TEXT,
+    delivery_address TEXT, delivery_lat REAL, delivery_lng REAL,
+    created_at DATETIME, archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    archived_reason TEXT
+  )`);
 });
 
-// Admin API key
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || "admin123";
+// Routes
+app.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
+// Simple in-memory attempt tracker (per-OTP id) - persisted storage recommended for production
+const otpAttempts = {};
 
-// -------------------
-// API ROUTES
-// -------------------
+function formatE164(digits) {
+  // digits expected to be only numbers (no +). Prefers DEFAULT_COUNTRY_CODE from env or '91'
+  const cc = (process.env.DEFAULT_COUNTRY_CODE || '91').replace(/^\+/, '');
+  if (!digits) return null;
+  // If digits already start with country code (length > 10), assume it's full number
+  if (digits.length > 10) return '+' + digits;
+  return '+' + cc + digits;
+}
 
-// Get all reservations
-app.get("/api/reservations", (req, res) => {
-  const key = req.headers["x-api-key"];
-  if (key !== ADMIN_API_KEY)
-    return res.status(401).json({ success: false, message: "Unauthorized" });
-
-  db.all(`SELECT * FROM reservations ORDER BY date, time, id`, (err, rows) => {
-    if (err) return res.status(500).json({ success: false, message: "Failed to fetch reservations" });
-    res.json({ success: true, count: rows.length, reservations: rows });
-  });
-});
-
-// Update reservation
-app.put("/api/reservations/:id", (req, res) => {
-  const key = req.headers["x-api-key"];
-  if (key !== ADMIN_API_KEY)
-    return res.status(401).json({ success: false, message: "Unauthorized" });
-
-  const id = req.params.id;
-  const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, status, delivery_option, menu_items, delivery_address } = req.body;
-
-  const query = `UPDATE reservations
-    SET name=?, email=?, phone=?, date=?, time=?, people=?, occasion=?, meal_type=?, message=?, payment_mode=?, payment_status=?, status=?, delivery_option=?, menu_items=?, delivery_address=?
-    WHERE id=?`;
-
-  db.run(query, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, status, delivery_option, menu_items, delivery_address, id], function (err) {
-    if (err) return res.status(500).json({ success: false, message: "Failed to update reservation" });
-    res.json({ success: true, message: "Reservation updated" });
-  });
-});
-
-// Delete reservation
-app.delete("/api/reservations/:id", (req, res) => {
-  const key = req.headers["x-api-key"];
-  if (key !== ADMIN_API_KEY)
-    return res.status(401).json({ success: false, message: "Unauthorized" });
-
-  const id = req.params.id;
-  db.run(`DELETE FROM reservations WHERE id=?`, [id], function (err) {
-    if (err) return res.status(500).json({ success: false, message: "Failed to delete reservation" });
-    res.json({ success: true, message: "Reservation deleted" });
-  });
-});
-
-// Save new reservation (user-facing)
-// Legacy single-step reservation (kept for compatibility) - will validate inputs
-app.post("/reserve", (req, res) => {
-  const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
-
-  console.log('Received reservation (legacy endpoint):', { name, email, phone, date, time, people, occasion, meal_type, payment_mode, delivery_option });
-
-  if (!name || !email || !phone || !date || !time || !people || !payment_mode) {
-    return res.status(400).json({ success: false, message: "Missing required fields." });
-  }
-
-  // Validate delivery address if delivery option is selected
-  if (delivery_option === 'Delivery' && !delivery_address) {
-    return res.status(400).json({ success: false, message: "Delivery address is required for delivery orders." });
-  }
-
-  // Validate date and time - must be advance booking (at least 2 hours from now)
-  // Use Indian Standard Time (IST) - UTC+5:30
-  
-  // Get current time in IST
-  const nowUTC = new Date();
-  const currentDateTimeIST = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  
-  // Calculate minimum advance booking time (2 hours from now, minus 1 minute buffer)
-  const minAdvanceBookingTime = new Date(currentDateTimeIST.getTime() + (2 * 60 * 60 * 1000) - (1 * 60 * 1000)); // 2 hours - 1 min buffer
-  
-  // Parse reservation date/time in IST
-  const reservationDateTime = new Date(`${date}T${time}:00`);
-  
-  console.log('🕒 Current IST time:', currentDateTimeIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-  console.log('🕒 Minimum booking time:', minAdvanceBookingTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-  console.log('🕒 Requested booking time:', reservationDateTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-  
-  // Check if booking is in the past
-  if (reservationDateTime < currentDateTimeIST) {
-    console.log('Invalid reservation time: Past date/time not allowed (IST)');
-    return res.status(400).json({ 
-      success: false, 
-      message: "Cannot book a reservation in the past. Please select a future date and time (Indian Standard Time)." 
-    });
-  }
-  
-  // Check if booking meets minimum advance time (2 hours)
-  if (reservationDateTime < minAdvanceBookingTime) {
-    console.log('Invalid reservation time: Less than 2 hours advance notice');
-    const requiredTime = minAdvanceBookingTime.toLocaleString('en-IN', { 
-      timeZone: 'Asia/Kolkata',
-      dateStyle: 'medium',
-      timeStyle: 'short'
-    });
-    return res.status(400).json({ 
-      success: false, 
-      message: `Advance booking required. Please book at least 2 hours in advance. Earliest available time: ${requiredTime}` 
-    });
-  }
-
-  // Check for table availability - only for Dine-in (table reservations)
-  // Restaurant has 10 tables total. Each reservation lasts ~2 hours.
-  // Need to check overlapping time slots (±2 hours)
-  console.log('🔍 DEBUG: Checking table availability for delivery_option:', delivery_option);
-  console.log('🔍 DEBUG: Date:', date, 'Time:', time);
-  
-  if (delivery_option === 'Dine-in' || !delivery_option) {
-    console.log('✅ DEBUG: Entering table availability check for Dine-in');
-    
-    // Parse the requested time to calculate overlap window
-    const [hours, minutes] = time.split(':').map(Number);
-    const requestedTime = hours * 60 + minutes; // Convert to minutes since midnight
-    
-    // Check for overlapping reservations (2 hours = 120 minutes before and after)
-    const overlapWindow = 120; // minutes
-    
-    // Get all reservations for the same date
-    db.all(
-      `SELECT time FROM reservations 
-       WHERE date = ? 
-       AND (delivery_option = 'Dine-in' OR delivery_option IS NULL)
-       AND status != 'cancelled'`,
-      [date],
-      (err, rows) => {
-        if (err) {
-          console.error('❌ Error checking for table availability:', err);
-          return res.status(500).json({ success: false, message: "Error checking availability." });
-        }
-
-        console.log(`📊 DEBUG: Found ${rows.length} existing reservations on ${date}`);
-        
-        // Count tables occupied during the requested time slot
-        let tablesOccupied = 0;
-        rows.forEach(reservation => {
-          const [resHours, resMinutes] = reservation.time.split(':').map(Number);
-          const resTime = resHours * 60 + resMinutes;
-          
-          // Check if this reservation overlaps with requested time
-          // A reservation overlaps if it's within 2 hours before or after
-          const timeDiff = Math.abs(requestedTime - resTime);
-          if (timeDiff < overlapWindow) {
-            tablesOccupied++;
-            console.log(`   ⏰ Overlapping: ${reservation.time} (${timeDiff} minutes apart)`);
-          }
-        });
-        
-        const totalTables = 10; // Total tables in restaurant
-        console.log(`📊 DEBUG: Tables occupied during ${time}: ${tablesOccupied}/${totalTables}`);
-        
-        if (tablesOccupied >= totalTables) {
-          console.log(`🚫 REJECTING: All tables occupied - ${tablesOccupied} tables already booked around ${time} on ${date}`);
-          return res.status(400).json({ 
-            success: false, 
-            message: `Sorry, all tables are occupied around ${time} on ${date}. Please choose a different time slot (at least 2 hours apart from existing bookings).` 
-          });
-        }
-
-        console.log(`✅ DEBUG: Tables available (${totalTables - tablesOccupied} free), proceeding with booking`);
-        // If available, proceed with booking
-        saveReservation();
-      }
-    );
-  } else {
-    console.log('📦 DEBUG: Delivery/Takeaway order - skipping table availability check');
-    // For Delivery and Takeaway, proceed directly (no table limits)
-    saveReservation();
-  }
-
-  function saveReservation() {
-    // Validation helpers
-    function isValidEmail(email) {
-      if (!email || typeof email !== 'string') return false;
-      // Basic RFC5322-ish regex for common emails
-      const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      return re.test(email.trim());
-    }
-
-    function normalizePhone(phone) {
-      if (!phone) return null;
-      // Remove non-digit characters
-      const digits = phone.toString().replace(/\D/g, '');
-      // Accept international (+country) or local numbers; require 7-15 digits
-      if (digits.length < 7 || digits.length > 15) return null;
-      return digits;
-    }
-
-    // Validate email and phone before inserting
-    if (!isValidEmail(email)) {
-      console.log('Invalid email provided:', email);
-      return res.status(400).json({ success: false, message: 'Invalid email address.' });
-    }
-
-    const normalizedPhone = normalizePhone(phone);
-    if (!normalizedPhone) {
-      console.log('Invalid phone provided:', phone);
-      return res.status(400).json({ success: false, message: 'Invalid phone number. Use digits only, 7 to 15 characters.' });
-    }
-
-    // Use normalized phone for storage
-    const phoneToStore = normalizedPhone;
-
-    const payment_status = payment_mode === "Cash" ? "not_required" : "pending";
-    const finalDeliveryOption = delivery_option || 'Dine-in';
-    const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
-    const google_maps_link = req.body.google_maps_link || null;
-
-    db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  [name, email.trim(), phoneToStore, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address],
-      function (err) {
-      if (err) {
-        console.error('Database error:', err);
-        return res.status(500).json({ success: false, message: "Failed to save reservation: " + err.message });
-      }
-      
-      const reservationId = this.lastID;
-      console.log('Reservation saved successfully with ID:', reservationId);
-      
-      // Parse menu items for email display
-      let menuItemsDisplay = '';
-      if (menu_items) {
-        const items = typeof menu_items === 'string' ? JSON.parse(menu_items) : menu_items;
-        if (Array.isArray(items) && items.length > 0) {
-          menuItemsDisplay = `
-            <div class="detail-row">
-              <span class="label">🍽️ Menu Items:</span>
-              <ul style="margin: 5px 0; padding-left: 20px;">
-                ${items.map(item => `<li>${item.name} - Quantity: ${item.quantity}${item.price ? ` - $${item.price}` : ''}</li>`).join('')}
-              </ul>
-            </div>
-          `;
-        }
-      }
-      
-      // Send confirmation email to user
-      const mailOptions = {
-        from: `"FoodHub Restaurant" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "✅ Table Reservation Confirmed - FoodHub Restaurant",
-        html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background-color: #cda45e; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-              .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; }
-              .reservation-details { background-color: white; padding: 20px; margin: 20px 0; border-left: 4px solid #cda45e; }
-              .detail-row { margin: 10px 0; }
-              .label { font-weight: bold; color: #555; }
-              .value { color: #333; }
-              .footer { background-color: #1a1814; color: white; padding: 20px; text-align: center; border-radius: 0 0 5px 5px; }
-              .success-icon { font-size: 48px; color: #28a745; text-align: center; margin: 20px 0; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>🍽️ FoodHub Restaurant</h1>
-              </div>
-              <div class="content">
-                <div class="success-icon">✅</div>
-                <h2 style="text-align: center; color: #cda45e;">Table Reserved Successfully!</h2>
-                <p>Dear <strong>${name}</strong>,</p>
-                <p>Thank you for choosing FoodHub Restaurant! We are delighted to confirm your table reservation.</p>
-                
-                <div class="reservation-details">
-                  <h3 style="color: #cda45e; margin-top: 0;">Reservation Details:</h3>
-                  <div class="detail-row">
-                    <span class="label">Reservation ID:</span> <span class="value">#${reservationId}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">🛵 Service Type:</span> <span class="value">${finalDeliveryOption}</span>
-                  </div>
-                  ${finalDeliveryOption === 'Delivery' && delivery_address ? `
-                  <div class="detail-row">
-                    <span class="label">📍 Delivery Address:</span> <span class="value">${delivery_address}</span>
-                  </div>
-                  ${google_maps_link ? `
-                  <div class="detail-row">
-                    <span class="label">🗺️ View Location:</span> 
-                    <a href="${google_maps_link}" target="_blank" style="color: #cda45e; text-decoration: none;">
-                      📍 Open in Google Maps
-                    </a>
-                  </div>` : ''}` : ''}
-                  <div class="detail-row">
-                    <span class="label">� Date:</span> <span class="value">${date}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">🕐 Time:</span> <span class="value">${time}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">👥 Number of Guests:</span> <span class="value">${people}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">🍽️ Meal Type:</span> <span class="value">${meal_type || 'N/A'}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">🎉 Occasion:</span> <span class="value">${occasion || 'N/A'}</span>
-                  </div>
-                  ${menuItemsDisplay}
-                  <div class="detail-row">
-                    <span class="label">💳 Payment Mode:</span> <span class="value">${payment_mode}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">📧 Email:</span> <span class="value">${email}</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="label">📞 Phone:</span> <span class="value">${phone}</span>
-                  </div>
-                  ${message ? `<div class="detail-row"><span class="label">💬 Special Requests:</span> <span class="value">${message}</span></div>` : ''}
-                </div>
-
-                <p style="margin-top: 20px;"><strong>Important Information:</strong></p>
-                <ul>
-                  ${finalDeliveryOption === 'Dine-in' ? '<li>Please arrive 10 minutes before your reservation time</li>' : ''}
-                  ${finalDeliveryOption === 'Delivery' ? '<li>Your order will be delivered to the address provided</li>' : ''}
-                  ${finalDeliveryOption === 'Takeaway' ? '<li>Please arrive at the specified time to collect your order</li>' : ''}
-                  <li>If you need to cancel or modify your ${finalDeliveryOption === 'Dine-in' ? 'reservation' : 'order'}, please contact us at least 2 hours in advance</li>
-                  ${finalDeliveryOption === 'Dine-in' ? '<li>Your table will be held for 15 minutes past your reservation time</li>' : ''}
-                  ${payment_mode === 'Online' ? '<li>⚠️ Payment confirmation pending. Please complete the payment process.</li>' : ''}
-                </ul>
-
-                <p>We look forward to serving you an unforgettable dining experience!</p>
-                
-                <p style="margin-top: 30px;">Best regards,<br><strong>FoodHub Restaurant Team</strong></p>
-              </div>
-              <div class="footer">
-                <p style="margin: 5px 0;">📍 123 Restaurant Street, Food City</p>
-                <p style="margin: 5px 0;">📞 Contact: +1 234 567 8900</p>
-                <p style="margin: 5px 0;">📧 Email: ${process.env.EMAIL_USER}</p>
-                <p style="margin: 5px 0; font-size: 12px; color: #999;">© 2025 FoodHub Restaurant. All rights reserved.</p>
-              </div>
-            </div>
-          </body>
-          </html>
-        `,
-      };
-
-      transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-          console.error('Error sending confirmation email:', error);
-          // Still send success response even if email fails
-          return res.json({ 
-            success: true, 
-            reservationId: reservationId,
-            emailSent: false,
-            message: "Reservation confirmed but email notification failed"
-          });
-        }
-        console.log('Confirmation email sent:', info.response);
-        res.json({ 
-          success: true, 
-          reservationId: reservationId,
-          emailSent: true,
-          message: "Reservation confirmed and confirmation email sent"
-        });
-      });
-    });
-  } // End of saveReservation function
-});
-
-// New OTP-based reservation flow
-// Step 1: Request OTP (creates a pending reservation entry in `otps` table)
+// Request OTP (uses hashed OTP in DB and logs send results)
 app.post('/reserve/request-otp', (req, res) => {
   try {
     const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
-
-    if (!name || !email || !phone || !date || !time || !people || !payment_mode) {
-      return res.status(400).json({ success: false, message: 'Missing required fields.' });
-    }
-
+    if (!name || !email || !phone || !date || !time || !people || !payment_mode) return res.status(400).json({ success: false, message: 'Missing required fields.' });
     if (!isValidEmail(email)) return res.status(400).json({ success: false, message: 'Invalid email.' });
-    const phoneNorm = normalizePhone(phone);
-    if (!phoneNorm) return res.status(400).json({ success: false, message: 'Invalid phone.' });
+    const phoneNorm = normalizePhone(phone); if (!phoneNorm) return res.status(400).json({ success: false, message: 'Invalid phone.' });
 
-    // Create OTP and store pending reservation data
+    // Clean up expired otps (best-effort)
+    try { db.run(`DELETE FROM otps WHERE expires_at <= ?`, [new Date().toISOString()]); } catch (e) { console.error('Failed to cleanup expired otps', e); }
+
     const otp = generateOTP(6);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     const reservationData = JSON.stringify({ name, email: email.trim(), phone: phoneNorm, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address });
 
-    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otp, expiresAt.toISOString()], async function(err) {
-      if (err) return res.status(500).json({ success: false, message: 'Failed to create OTP.' });
+    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otpHash, expiresAt.toISOString()], function(err) {
+      if (err) { console.error('Failed to insert otp', err); return res.status(500).json({ success: false, message: 'Failed to create OTP.' }); }
       const otpId = this.lastID;
 
-        // Send OTP by email (promisified)
-        const mailOptions = {
-          from: `"FoodHub" <${process.env.EMAIL_USER}>`,
-          to: email.trim(),
-          subject: 'Your FoodHub reservation OTP',
-          text: `Your OTP for confirming reservation is: ${otp}. It expires in 10 minutes.`
-        };
+      const mailOptions = { from: `"FoodHub" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: email.trim(), subject: 'Your FoodHub reservation OTP', text: `Your OTP: ${otp} (expires in 10 minutes)` };
 
-        const sendMailAsync = (opts) => new Promise((resolve) => {
-          transporter.sendMail(opts, (error, info) => {
-            if (error) return resolve({ ok: false, error: error.message });
-            return resolve({ ok: true, response: info && info.response });
-          });
-        });
-
-        const emailResult = await sendMailAsync(mailOptions);
-  let smsResult = { ok: false, error: 'Twilio not configured' };
-        if (twilioClient) {
-          try {
-            const msg = await twilioClient.messages.create({
-              body: `Your FoodHub reservation OTP: ${otp}`,
-              from: process.env.TWILIO_FROM_NUMBER,
-              to: '+' + phoneNorm
-            });
-            smsResult = { ok: true, sid: msg.sid };
-          } catch (err) {
-            smsResult = { ok: false, error: err.message };
+      (async () => {
+        try {
+          let emailResult = { ok: false, info: 'skipped' };
+          if (process.env.DEV_SHOW_OTP === '1') {
+            emailResult = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+            console.log('[request-otp] DEV_SHOW_OTP=1, skipping email send; OTP=', otp);
+          } else {
+            emailResult = await sendMailAsync(mailOptions);
           }
-        }
 
-  const resp = { success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult };
-  // In development/testing allow returning the OTP in the response when DEV_SHOW_OTP=1
-  if (process.env.DEV_SHOW_OTP === '1') resp.otp = otp;
-  res.json(resp);
+          let smsResult = { ok: false, error: 'Twilio not configured' };
+          if (twilioClient) {
+            try {
+              const toNumber = formatE164(phoneNorm);
+              const fromNumber = process.env.TWILIO_FROM_NUMBER;
+              console.log('[request-otp] sending SMS to', toNumber, 'from', fromNumber);
+              const msg = await twilioClient.messages.create({ body: `Your FoodHub reservation OTP: ${otp}`, from: fromNumber, to: toNumber });
+              smsResult = { ok: true, sid: msg.sid };
+            } catch (e) {
+              console.error('[request-otp] Twilio send error:', e && e.message ? e.message : e);
+              smsResult = { ok: false, error: e && e.message ? e.message : String(e) };
+            }
+          }
+
+          console.log('[request-otp] emailResult=', emailResult, 'smsResult=', smsResult);
+          const resp = { success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult };
+          if (process.env.DEV_SHOW_OTP === '1') resp.otp = otp;
+          return res.json(resp);
+        } catch (e) {
+          console.error('Request OTP internal error:', e);
+          return res.status(500).json({ success: false, message: 'Internal error while sending OTP.' });
+        }
+      })();
     });
-  } catch (e) {
-    console.error('Request OTP error:', e);
-    res.status(500).json({ success: false, message: 'Internal server error while requesting OTP.' });
-  }
+  } catch (e) { console.error('Request OTP error', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
-// Step 2: Verify OTP and finalize reservation
+// Verify OTP and finalize
 app.post('/reserve/verify-otp', (req, res) => {
   try {
-    const { otpId, otp } = req.body;
-    if (!otpId || !otp) return res.status(400).json({ success: false, message: 'otpId and otp required.' });
+    const { otpId, otp } = req.body; if (!otpId || !otp) return res.status(400).json({ success: false, message: 'otpId and otp required.' });
+    // rate-limit attempts per otpId
+    otpAttempts[otpId] = (otpAttempts[otpId] || 0) + 1;
+    if (otpAttempts[otpId] > 5) return res.status(429).json({ success: false, message: 'Too many attempts, try again later.' });
 
     db.get(`SELECT * FROM otps WHERE id = ?`, [otpId], (err, row) => {
-      if (err) return res.status(500).json({ success: false, message: 'DB error' });
+      if (err) { console.error('DB error on select otp:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
       if (!row) return res.status(404).json({ success: false, message: 'OTP not found.' });
-      if (row.otp !== otp) return res.status(400).json({ success: false, message: 'Invalid OTP.' });
       if (new Date(row.expires_at) < new Date()) return res.status(400).json({ success: false, message: 'OTP expired.' });
 
-      // Parse reservation data and insert into reservations
-      let data;
-      try { data = JSON.parse(row.reservation_data); } catch (e) { return res.status(500).json({ success: false, message: 'Invalid reservation data.' }); }
+      // Compare hashed OTP
+      const incomingHash = crypto.createHash('sha256').update(String(otp)).digest('hex');
+      if (row.otp !== incomingHash) {
+        console.warn('[verify-otp] invalid otp attempt for id', otpId);
+        return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+      }
 
-      // Prepare columns
+      let data; try { data = JSON.parse(row.reservation_data); } catch (e) { console.error('Invalid reservation_data JSON', e); return res.status(500).json({ success: false, message: 'Invalid reservation data.' }); }
       const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = data;
-      const payment_status = payment_mode === 'Cash' ? 'not_required' : 'pending';
-      const finalDeliveryOption = delivery_option || 'Dine-in';
-      const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
+      const payment_status = payment_mode === 'Cash' ? 'not_required' : 'pending'; const finalDeliveryOption = delivery_option || 'Dine-in'; const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
 
       db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], async function(err) {
-        if (err) return res.status(500).json({ success: false, message: 'Failed to save reservation.' });
+        if (err) { console.error('Failed to insert reservation:', err); return res.status(500).json({ success: false, message: 'Failed to save reservation.' }); }
         const reservationId = this.lastID;
-
-        // Delete OTP row
         db.run(`DELETE FROM otps WHERE id = ?`, [otpId]);
 
-        // Send confirmation email (promisified)
-        const mailOptions = {
-          from: `"FoodHub Restaurant" <${process.env.EMAIL_USER}>`,
-          to: email,
-          subject: '✅ Table Reservation Confirmed - FoodHub Restaurant',
-          text: `Your reservation is confirmed. Reservation ID: ${reservationId}`
-        };
-        const sendMailAsync = (opts) => new Promise((resolve) => {
-          transporter.sendMail(opts, (error, info) => {
-            if (error) return resolve({ ok: false, error: error.message });
-            return resolve({ ok: true, response: info && info.response });
-          });
-        });
+        // If payment is Online, do not send confirmation email yet — wait for payment completion.
+        const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: email, subject: '✅ Table Reservation Confirmed - FoodHub Restaurant', text: `Your reservation is confirmed. Reservation ID: ${reservationId}` };
+        let confirmationEmail = { ok: false, info: 'not-sent' };
+        const paymentRequired = String(payment_mode).toLowerCase() === 'online';
+        const paymentAmount = Number(process.env.DEFAULT_ONLINE_AMOUNT || 500);
 
-        const confirmationEmail = await sendMailAsync(mailOptions);
+        if (!paymentRequired) {
+          if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+          else {
+            try { confirmationEmail = await sendMailAsync(mailOptions); } catch (e) { console.error('Error sending confirmation email:', e); confirmationEmail = { ok: false, error: e && e.message ? e.message : String(e) }; }
+          }
+        } else {
+          confirmationEmail = { ok: false, info: 'awaiting_payment' };
+        }
 
-        res.json({ success: true, reservationId, message: 'Reservation confirmed', confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
+        // cleanup attempts
+        delete otpAttempts[otpId];
+
+        return res.json({ success: true, reservationId, message: 'Reservation created', paymentRequired, paymentAmount, confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
       });
     });
-  } catch (e) {
-    console.error('Verify OTP error:', e);
-    res.status(500).json({ success: false, message: 'Internal server error while verifying OTP.' });
-  }
+  } catch (e) { console.error('Verify OTP error:', e); return res.status(500).json({ success: false, message: 'Internal server error while verifying OTP.' }); }
+});
+// POST /reserve - accept reservation directly and send confirmation
+app.post('/reserve', (req, res) => {
+  try {
+    const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
+    if (!name || !email || !phone || !date || !time || !people || !payment_mode) return res.status(400).json({ success: false, message: 'Missing required fields.' });
+    if (!isValidEmail(email)) return res.status(400).json({ success: false, message: 'Invalid email.' });
+    const phoneNorm = normalizePhone(phone); if (!phoneNorm) return res.status(400).json({ success: false, message: 'Invalid phone.' });
+
+    const payment_status = payment_mode === 'Cash' ? 'not_required' : 'pending';
+    const finalDeliveryOption = delivery_option || 'Dine-in';
+    const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
+
+    db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email.trim(), phoneNorm, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], async function(err) {
+      if (err) { console.error('Failed to insert reservation:', err); return res.status(500).json({ success: false, message: 'Failed to save reservation.' }); }
+      const reservationId = this.lastID;
+
+      const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: email.trim(), subject: '✅ Table Reservation Confirmed - FoodHub Restaurant', text: `Your reservation is confirmed. Reservation ID: ${reservationId}` };
+      let confirmationEmail = { ok: false, error: 'skipped' };
+      if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+      else {
+        try { confirmationEmail = await sendMailAsync(mailOptions); } catch (e) { console.error('Error sending confirmation email:', e); confirmationEmail = { ok: false, error: e && e.message ? e.message : String(e) }; }
+      }
+
+      return res.json({ success: true, reservationId, message: 'Reservation saved', confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
+    });
+  } catch (e) { console.error('Reserve error:', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
-// Health endpoint
-app.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
+// Serve favicon
+app.get('/favicon.ico', (req, res) => { res.sendFile(path.join(__dirname, 'assets', 'img', 'favicon.ico')); });
 
-// Serve favicon at root to avoid 404 noise
-app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, 'assets', 'img', 'favicon.ico'));
+// Admin: list reservations (JSON)
+app.get('/admin/reservations', (req, res) => {
+  try {
+    db.all(`SELECT id,name,email,phone,date,time,people,occasion,meal_type,payment_mode,payment_status,status,created_at FROM reservations ORDER BY created_at DESC`, [], (err, rows) => {
+      if (err) { console.error('DB error fetching reservations:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+      return res.json({ success: true, reservations: rows });
+    });
+  } catch (e) { console.error('Admin list error:', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// Admin: delete a reservation by id
+app.delete('/admin/reservations/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid id' });
+    db.run(`DELETE FROM reservations WHERE id = ?`, [id], function(err) {
+      if (err) { console.error('DB delete error:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+      if (this.changes && this.changes > 0) return res.json({ success: true, deletedId: id });
+      return res.status(404).json({ success: false, message: 'Reservation not found' });
+    });
+  } catch (e) { console.error('Admin delete error:', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// --- API routes protected by ADMIN_API_KEY (used by Admin.html script)
+function requireAdminKey(req, res) {
+  const provided = req.get('x-api-key') || req.query.api_key || req.headers['x-api-key'];
+  // Debug logging for admin auth
+  try {
+    console.log('[requireAdminKey] provided=', provided, ' ADMIN_API_KEY_set=', !!process.env.ADMIN_API_KEY);
+  } catch (e) { /* ignore logging errors */ }
+  if (!process.env.ADMIN_API_KEY) return { ok: false, code: 500, message: 'Server misconfigured: ADMIN_API_KEY not set' };
+  if (!provided || provided !== process.env.ADMIN_API_KEY) return { ok: false, code: 401, message: 'Invalid API key' };
+  return { ok: true };
+}
+
+app.get('/api/reservations', (req, res) => {
+  console.log('[api GET /api/reservations] incoming request from', req.ip, 'headers:', { 'x-api-key': req.get('x-api-key') });
+  const check = requireAdminKey(req, res);
+  if (!check.ok) return res.status(check.code).json({ success: false, message: check.message });
+  db.all(`SELECT * FROM reservations ORDER BY created_at DESC`, [], (err, rows) => {
+    if (err) { console.error('DB error fetching reservations (api):', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+    return res.json({ success: true, reservations: rows });
+  });
+});
+
+app.put('/api/reservations/:id', (req, res) => {
+  const check = requireAdminKey(req, res);
+  if (!check.ok) return res.status(check.code).json({ success: false, message: check.message });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid id' });
+  const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, status } = req.body;
+  db.run(`UPDATE reservations SET name=?,email=?,phone=?,date=?,time=?,people=?,occasion=?,meal_type=?,message=?,payment_mode=?,payment_status=?,status=? WHERE id=?`, [name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,status,id], function(err) {
+    if (err) { console.error('DB update error (api):', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+    // fetch updated row to decide if we need to trigger actions (e.g., resend confirmation)
+    db.get(`SELECT * FROM reservations WHERE id = ?`, [id], async (getErr, row) => {
+      if (getErr) { console.error('DB fetch after update error:', getErr); return res.status(500).json({ success: false, message: 'DB error' }); }
+      try {
+          // If reservation is cancelled by admin and there's a message, send cancellation email to customer
+          if (row && String(row.status).toLowerCase() === 'cancelled') {
+            try {
+              const adminMessage = row.message || message || 'Your reservation was cancelled by the admin.';
+              const mailOptionsCancel = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: row.email, subject: 'Reservation Cancelled — FoodHub Restaurant', text: `Hi ${row.name || ''},\n\nWe are sorry to inform you that your reservation (ID: ${row.id}) has been cancelled by the admin.\n\nMessage from admin:\n${adminMessage}\n\nIf you have questions, please contact us.` };
+              let cancellationEmail = { ok: false, info: 'skipped' };
+              if (process.env.DEV_SHOW_OTP === '1') cancellationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+              else { cancellationEmail = await sendMailAsync(mailOptionsCancel); }
+              console.log('[api PUT /api/reservations/:id] cancellation email status:', cancellationEmail);
+              return res.json({ success: true, updatedId: id, cancellationEmailSent: cancellationEmail.ok, cancellationEmailInfo: cancellationEmail });
+            } catch (e) { console.error('Error sending cancellation email after admin cancel:', e); }
+          }
+
+          // If reservation is confirmed and it's Online but not paid, resend confirmation email
+          if (row && String(row.status).toLowerCase() === 'confirmed' && String(row.payment_mode).toLowerCase() === 'online' && String(row.payment_status).toLowerCase() !== 'paid') {
+            const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: row.email, subject: 'Reservation Confirmed — Payment Pending', text: `Hi ${row.name || ''},\n\nYour reservation (ID: ${row.id}) has been confirmed. Please complete the payment to finalize your booking.\n\nThank you!` };
+            let confirmationEmail = { ok: false, info: 'skipped' };
+            if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+            else {
+              try { confirmationEmail = await sendMailAsync(mailOptions); } catch (e) { console.error('Error sending confirmation email after admin confirm:', e); confirmationEmail = { ok: false, error: e && e.message ? e.message : String(e) }; }
+            }
+            console.log('[api PUT /api/reservations/:id] auto-resend confirmation status:', confirmationEmail);
+            return res.json({ success: true, updatedId: id, confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
+          }
+      } catch (e) { console.error('Post-update action error:', e); }
+      return res.json({ success: true, updatedId: id });
+    });
+  });
+});
+
+app.delete('/api/reservations/:id', (req, res) => {
+  const check = requireAdminKey(req, res);
+  if (!check.ok) return res.status(check.code).json({ success: false, message: check.message });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid id' });
+  // Archive-then-delete pattern: copy row into archived_reservations then delete
+  db.get(`SELECT * FROM reservations WHERE id = ?`, [id], (getErr, row) => {
+    if (getErr) { console.error('DB error fetching reservation for archive:', getErr); return res.status(500).json({ success: false, message: 'DB error' }); }
+    if (!row) return res.status(404).json({ success: false, message: 'Reservation not found' });
+
+    const params = [row.id, row.name, row.email, row.phone, row.date, row.time, row.people, row.occasion, row.meal_type, row.payment_mode, row.payment_status, row.message, row.status, row.delivery_option, row.menu_items, row.delivery_address, row.delivery_lat, row.delivery_lng, row.created_at, 'archived_via_api_delete'];
+    db.run(`INSERT INTO archived_reservations (original_id,name,email,phone,date,time,people,occasion,meal_type,payment_mode,payment_status,message,status,delivery_option,menu_items,delivery_address,delivery_lat,delivery_lng,created_at,archived_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, params, function(insErr) {
+      if (insErr) { console.error('DB error inserting archive row:', insErr); return res.status(500).json({ success: false, message: 'DB error' }); }
+      // now delete
+      db.run(`DELETE FROM reservations WHERE id = ?`, [id], function(delErr) {
+        if (delErr) { console.error('DB delete error (api):', delErr); return res.status(500).json({ success: false, message: 'DB error' }); }
+        if (this.changes && this.changes > 0) return res.json({ success: true, archivedId: this.lastID, deletedId: id });
+        return res.status(500).json({ success: false, message: 'Failed to delete after archive' });
+      });
+    });
+  });
+});
+
+// Admin: resend confirmation email for a reservation (protected)
+app.post('/api/reservations/:id/resend-confirmation', async (req, res) => {
+  const check = requireAdminKey(req, res);
+  if (!check.ok) return res.status(check.code).json({ success: false, message: check.message });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid id' });
+  db.get(`SELECT * FROM reservations WHERE id = ?`, [id], async (err, row) => {
+    if (err) { console.error('DB error fetching reservation for resend:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+    if (!row) return res.status(404).json({ success: false, message: 'Reservation not found' });
+
+    const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: row.email, subject: '✅ Reservation Confirmation — FoodHub Restaurant', text: `Hi ${row.name || ''},\n\nThis is a confirmation for your reservation (ID: ${row.id}).\n\nThank you!` };
+    try {
+      let confirmationEmail = { ok: false, info: 'skipped' };
+      if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+      else { confirmationEmail = await sendMailAsync(mailOptions); }
+      console.log('[admin resend-confirmation] sent status for id', id, confirmationEmail);
+      return res.json({ success: true, reservationId: id, confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
+    } catch (e) {
+      console.error('Error sending confirmation email (admin resend):', e);
+      return res.status(500).json({ success: false, message: 'Failed to send email', error: e && e.message ? e.message : String(e) });
+    }
+  });
+});
+
+// Payment confirmation webhook / endpoint
+// Marks a reservation as paid and sends the final confirmation email to the customer.
+app.post('/payment/confirm', (req, res) => {
+  try {
+    const { reservationId, amount, paymentProvider, transactionId } = req.body;
+    if (!reservationId) return res.status(400).json({ success: false, message: 'reservationId required' });
+    const id = Number(reservationId);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid reservationId' });
+
+    db.get(`SELECT * FROM reservations WHERE id = ?`, [id], async (err, row) => {
+      if (err) { console.error('DB error fetching reservation for payment confirm:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
+      if (!row) return res.status(404).json({ success: false, message: 'Reservation not found' });
+
+      if (String(row.payment_status).toLowerCase() === 'paid') {
+        // Reservation already marked as paid — resend confirmation email (idempotent)
+        try {
+          const mailOptionsAlready = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: row.email, subject: '✅ Payment Received — Reservation Confirmed', text: `Hi ${row.name || ''},\n\nWe have already received your payment. Your reservation is confirmed. Reservation ID: ${id}${transactionId ? `\nTransaction: ${transactionId}` : ''}\n\nThank you!` };
+          let confirmationEmailAlready = { ok: false, info: 'skipped' };
+          if (process.env.DEV_SHOW_OTP === '1') confirmationEmailAlready = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+          else {
+            try { confirmationEmailAlready = await sendMailAsync(mailOptionsAlready); } catch (e) { console.error('Error re-sending confirmation email for already-paid reservation:', e); confirmationEmailAlready = { ok: false, error: e && e.message ? e.message : String(e) }; }
+          }
+          console.log('[payment/confirm] reservation already paid - resend status:', confirmationEmailAlready);
+          return res.json({ success: true, message: 'Reservation already marked as paid', reservationId: id, confirmationEmailSent: confirmationEmailAlready.ok, confirmationEmailInfo: confirmationEmailAlready });
+        } catch (e) {
+          console.error('Error while attempting to resend confirmation for already-paid reservation:', e);
+          return res.json({ success: true, message: 'Reservation already marked as paid', reservationId: id, confirmationEmailSent: false, confirmationEmailInfo: { ok: false, error: String(e) } });
+        }
+      }
+
+      // Update payment_status and status to confirmed
+      db.run(`UPDATE reservations SET payment_status = ?, status = ? WHERE id = ?`, ['paid', 'confirmed', id], async function(updateErr) {
+        if (updateErr) { console.error('DB update error on payment confirm:', updateErr); return res.status(500).json({ success: false, message: 'Failed to update reservation' }); }
+
+        // Send confirmation email
+        const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: row.email, subject: '✅ Payment Received — Reservation Confirmed', text: `Hi ${row.name || ''},\n\nWe have received your payment${amount ? ` of ${amount}` : ''}. Your reservation is confirmed. Reservation ID: ${id}${transactionId ? `\nTransaction: ${transactionId}` : ''}\n\nThank you!` };
+
+        let confirmationEmail = { ok: false, info: 'skipped' };
+        if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
+        else {
+          try { confirmationEmail = await sendMailAsync(mailOptions); } catch (e) { console.error('Error sending payment confirmation email:', e); confirmationEmail = { ok: false, error: e && e.message ? e.message : String(e) }; }
+        }
+
+        return res.json({ success: true, reservationId: id, confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
+      });
+    });
+  } catch (e) { console.error('Payment confirm error:', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
 // Start server

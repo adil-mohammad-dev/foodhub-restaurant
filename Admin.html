@@ -2,25 +2,106 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>FoodHub Admin - Reservations</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FoodHub — Admin Reservations</title>
 <!-- Author: Mohammad Adil -->
+<!-- Bootstrap + AOS + Icons are available in vendor/ -->
+<link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="vendor/aos/aos.css">
+<link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css">
 <style>
-body{font-family:Arial,Helvetica,sans-serif;margin:20px;background:#f6f6f6}
-table{width:100%;border-collapse:collapse}
-th,td{padding:8px;border:1px solid #ddd;text-align:left}
-tr:nth-child(even){background:#fff}
-.danger{color:#fff;background:#d9534f;padding:6px;border-radius:4px;border:none;cursor:pointer}
-.ok{color:#fff;background:#5cb85c;padding:6px;border-radius:4px;border:none;cursor:pointer}
+	body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(120deg,#0f172a,#0b1220);color:#e6eef8;overflow-y:auto}
+	/* Animated gradient */
+	@keyframes bgShift { 0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%} }
+	body::before{content:'';position:fixed;inset:0;z-index:-2;background:linear-gradient(270deg,#071230, #0b1730, #0c1b3a);background-size:300% 300%;animation:bgShift 15s ease infinite;filter:blur(18px) saturate(120%);}
+	/* Floating soft blobs */
+	.bg-wrap{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+	.bg-wrap .blob{position:absolute;border-radius:50%;filter:blur(26px) opacity(.9)}
+	.bg-wrap .b1{width:360px;height:360px;background:radial-gradient(circle at 30% 30%, rgba(99,102,241,0.28), rgba(99,102,241,0.06));left:-80px;top:-60px;animation:move1 12s ease-in-out infinite}
+	.bg-wrap .b2{width:420px;height:420px;background:radial-gradient(circle at 70% 70%, rgba(16,185,129,0.22), rgba(16,185,129,0.04));right:-120px;top:80px;animation:move2 16s ease-in-out infinite}
+	.bg-wrap .b3{width:260px;height:260px;background:radial-gradient(circle at 50% 50%, rgba(253,186,116,0.18), rgba(253,186,116,0.03));left:20%;bottom:-80px;animation:move3 14s ease-in-out infinite}
+	@keyframes move1{0%{transform:translateY(0) translateX(0)}50%{transform:translateY(18px) translateX(24px)}100%{transform:translateY(0) translateX(0)}}
+	@keyframes move2{0%{transform:translateY(0) translateX(0)}50%{transform:translateY(-20px) translateX(-30px)}100%{transform:translateY(0) translateX(0)}}
+	@keyframes move3{0%{transform:translateY(0) translateX(0)}50%{transform:translateY(16px) translateX(-16px)}100%{transform:translateY(0) translateX(0)}}
+		.card-admin{box-shadow:0 10px 30px rgba(2,6,23,.6);background:rgba(255,255,255,0.04);backdrop-filter:blur(8px) saturate(120%);border:1px solid rgba(255,255,255,0.06);border-radius:12px}
+	.res-action-btn{min-width:110px}
+	.small-muted{font-size:.9rem;color:#6b7280}
+	#toast { position: fixed; right: 20px; bottom: 20px; z-index: 1200; }
 </style>
 </head>
 <body>
-<h2>Reservations (Admin)</h2>
-<div>
-API Key: <input id="apiKey" type="text" placeholder="Paste ADMIN_API_KEY here" style="width:400px">
-<button id="load">Load</button>
+<div class="bg-wrap" aria-hidden="true">
+	<div class="blob b1"></div>
+	<div class="blob b2"></div>
+	<div class="blob b3"></div>
 </div>
-<div id="results"></div>
+<nav class="navbar navbar-dark bg-dark mb-4">
+		<div class="container">
+			<a class="navbar-brand" href="#">FoodHub Admin</a>
+			<span class="text-light small">Reservations management</span>
+			<!-- Back to website button -->
+			<div class="ms-auto">
+				<a href="index.html" class="btn btn-outline-light btn-sm" title="Back to website"><i class="bi bi-arrow-left-circle"></i> Back to site</a>
+			</div>
+		</div>
+</nav>
 
+<div class="container">
+	<div class="card card-admin p-3 mb-4">
+		<div class="d-flex gap-2 align-items-center">
+			<label class="m-0 small-muted">Admin API Key</label>
+			<input id="apiKey" class="form-control form-control-sm" type="text" placeholder="Paste ADMIN_API_KEY here" style="max-width:420px">
+			<button id="load" class="btn btn-primary btn-sm">Load reservations</button>
+			<button id="refresh" class="btn btn-outline-secondary btn-sm">Refresh</button>
+			<div class="ms-auto small-muted">Tip: use the API key from your .env</div>
+		</div>
+	</div>
+
+	<div id="results"></div>
+	<div id="toast"></div>
+</div>
+
+	<!-- Cancel modal -->
+	<div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content bg-dark text-light">
+				<div class="modal-header">
+					<h5 class="modal-title" id="cancelModalLabel">Cancel Reservation</h5>
+					<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<div class="modal-body">
+					<div class="mb-2 small-muted">Please provide a short reason (this will be emailed to the customer)</div>
+					<textarea id="cancelReason" class="form-control" rows="4" placeholder="e.g., Kitchen fully booked for your slot"></textarea>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+					<button id="confirmCancelBtn" type="button" class="btn btn-danger">Cancel Reservation</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+<script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="vendor/aos/aos.js"></script>
+	<!-- Particle canvas (subtle animated dots) -->
+	<canvas id="particles" style="position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0.9"></canvas>
+	<script>
+	document.addEventListener('DOMContentLoaded',()=>{
+		if(window.AOS) AOS.init({duration:700,once:true});
+
+		// Simple particle field for depth
+		const canvas = document.getElementById('particles');
+		const ctx = canvas.getContext && canvas.getContext('2d');
+		if (!ctx) return;
+		let W, H, particles = [];
+		function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+		window.addEventListener('resize', resize); resize();
+		function rand(min, max){ return Math.random()*(max-min)+min }
+		for(let i=0;i<60;i++){ particles.push({ x: rand(0,W), y: rand(0,H), r: rand(0.6,2.4), vx: rand(-0.15,0.15), vy: rand(-0.05,0.2), alpha: rand(0.06,0.22) }) }
+		function tick(){ ctx.clearRect(0,0,W,H); for(const p of particles){ p.x += p.vx; p.y += p.vy; if(p.x < -50) p.x = W+50; if(p.x>W+50) p.x=-50; if(p.y>H+50) p.y=-50; ctx.beginPath(); ctx.fillStyle = `rgba(255,255,255,${p.alpha})`; ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); } requestAnimationFrame(tick); }
+		tick();
+	});
+	</script>
 <script src="assets/js/reservations-list.js"></script>
 </body>
 </html>

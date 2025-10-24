@@ -7,7 +7,7 @@ PROJECT INFORMATION
 ===================
 Project Name:    FoodHub Restaurant Management System
 Author:          Mohammad Adil
-Version:         1.0.0
+Version:         1.1.0
 License:         MIT
 Repository:      github.com/adil-mohammad-dev/foodhub-restaurant
 Deployment:      https://foodhub-restaurant.onrender.com
@@ -17,41 +17,34 @@ Deployment:      https://foodhub-restaurant.onrender.com
 EXECUTIVE SUMMARY
 =================
 
-FoodHub is a full-stack web application designed for modern restaurant 
-operations in India. It combines intelligent table reservation management with 
-online food ordering capabilities, featuring advanced business logic including 
-overlap-based capacity management, mandatory advance booking, and Indian 
-Standard Time validation. The system automates customer communications through 
-email confirmations and provides restaurant administrators with a centralized 
-dashboard for operations management.
+FoodHub is a compact, production-ready reservation and admin system built
+with Node.js and SQLite. It focuses on real-world restaurant needs: overlap-
+aware table reservations, OTP verification delivered by email and optional
+SMS, payment-aware confirmations, and an attractive animated admin console
+for operations (edit, delete, and re-send confirmations). The application
+prioritizes easy deployment, extensible delivery channels (SendGrid/Twilio),
+and simple admin recovery actions for missed emails.
 
 ================================================================================
 
 CORE OBJECTIVES
 ===============
 
-1. Eliminate Overbooking
-   - Intelligent 10-table capacity management with 2-hour dining duration 
-     overlap detection
+1. Prevent Overbooking
+   - Overlap-aware capacity that treats each reservation as a 2-hour usage of
+     a physical table (default 10 tables), preventing double bookings across
+     overlapping slots.
 
 2. Enforce Advance Planning
-   - Mandatory 2-hour minimum booking window prevents walk-ins, enabling 
-     better kitchen preparation
+   - Minimum 2-hour lead time (configurable) to ensure kitchen preparedness.
 
-3. Localized Operations
-   - All time validations based on Indian Standard Time (IST) regardless of 
-     server location
+3. Reliable Communications
+   - Primary email delivery via SendGrid with nodemailer SMTP fallback; SMS
+     via Twilio when configured. Admin can re-send confirmations from UI.
 
-4. Dual-Purpose Platform
-   - Single system handles both dine-in reservations and online ordering 
-     (delivery/takeaway)
-
-5. Automated Communication
-   - Instant HTML email confirmations reduce customer inquiries and no-shows
-
-6. Scalable Architecture
-   - API-ready design supports future mobile app integration and multi-location 
-     expansion
+4. Simple Operations UI
+   - Modern, animated admin dashboard to manage bookings, re-send emails and
+     inspect send results.
 
 ================================================================================
 
@@ -59,80 +52,38 @@ FEATURE BREAKDOWN
 =================
 
 1. SMART TABLE RESERVATION SYSTEM
-   
+
    Advance Booking Logic:
    - Minimum Notice: 2 hours (configurable)
-   - Maximum Notice: Unlimited (supports events months/years ahead)
-   - Validation: Real-time IST comparison prevents past bookings
-   - Error Messaging: Shows earliest available booking time
+   - Maximum Notice: Unlimited
+   - IST-aware validation: All checks use Indian Standard Time (UTC+5:30)
 
    Capacity Management:
-   - Total Capacity: 10 physical tables
-   - Dining Duration: 2 hours per reservation
-   - Overlap Detection: Checks ±2 hour windows
-   - Example: 8 bookings at 6:00 PM + 2 bookings at 7:00 PM = Full 
-     (10/10 tables occupied 7:00-8:00 PM)
-   - Intelligent Availability: Allows bookings 2+ hours apart when tables 
-     free up
+   - Default Capacity: 10 tables
+   - Dining Duration: 2 hours (overlap detection ±120 minutes)
+   - Overlap algorithm prevents capacity exceedance across adjacent slots
 
-   Time Zone Handling:
-   - Primary: Indian Standard Time (UTC+5:30)
-   - Server Agnostic: Works correctly regardless of hosting location
-   - Display Format: IST with Indian locale (dd/mm/yyyy, 12-hour format)
+2. OTP VERIFICATION & DELIVERY
 
-2. ONLINE ORDERING SYSTEM
+   - 6-digit OTPs (stored as SHA256 hashes) with 10-minute expiry in the
+     `otps` table.
+   - Email OTPs: sent by default; status returned in API response.
+   - SMS OTPs: sent via Twilio when TWILIO_* environment variables are set.
+   - `DEV_SHOW_OTP=1` exposes OTP in API response for secure local testing.
 
-   Order Types:
-   - Delivery: Full address collection + optional Google Maps link
-   - Takeaway: Minimal info, pickup at restaurant
+3. PAYMENT-AWARE FLOW
 
-   Menu Management (12 Pre-configured Items):
-   - Starters: Paneer Tikka (₹220), Chicken Kebab (₹260), Samosa (₹50)
-   - Main Course: Biryani (₹360), Butter Chicken (₹320), 
-     Paneer Butter Masala (₹280), Dal Tadka (₹180)
-   - Side Dishes: Naan (₹40), Veg Cutlet (₹120), Raita (₹90)
-   - Desserts: Gulab Jamun (₹90), Lassi (₹80)
-   - Category Filters: All Items, Starters, Main Course, Side Dishes, Desserts
-   - Selection Interface: Checkboxes with quantity inputs (1-10)
+   - Reservations may be created with payment_mode `Cash` or `Online`.
+   - POST /payment/confirm: marks a reservation as paid and sends a
+     confirmation email. The endpoint is idempotent — if the reservation is
+     already paid, it will re-send the confirmation email (useful for
+     recovering missed emails).
 
-   Address Collection (Delivery):
-   - House/Flat Number (required)
-   - Street/Area (required)
-   - Landmark (optional)
-   - City (required)
-   - State (required)
-   - Pincode (required, 6-digit validation)
-   - Google Maps Link (optional) - Customer can share location
+4. ADMIN DASHBOARD (ENHANCED)
 
-3. EMAIL NOTIFICATION SYSTEM
-
-   Confirmation Emails:
-   - Trigger: Sent immediately upon successful booking
-   - Format: Professional HTML template with branding
-   - Content:
-     * Reservation ID (unique identifier)
-     * Customer details (name, email, phone)
-     * Booking details (date, time, party size)
-     * Occasion and meal type
-     * Payment mode (Cash/Online) and status
-     * For Delivery/Takeaway:
-       - Selected menu items with quantities and prices
-       - Complete delivery address
-       - Google Maps link (if provided)
-
-   Technical Implementation:
-   - Service: Gmail SMTP via Nodemailer
-   - Credentials: Stored in .env (EMAIL_USER, EMAIL_PASS)
-   - Reliability: Error handling with fallback messaging
-
-4. ADMIN DASHBOARD
-
-   Features:
-   - View All Reservations: Paginated list with filters
-   - Status Management: Pending, Confirmed, Cancelled
-   - Payment Tracking: Cash vs Online payment modes
-   - Secure Access: API key authentication (ADMIN_API_KEY)
-   - Real-time Data: Direct SQLite database queries
+   - `Admin.html` delivers a polished UI (Bootstrap + AOS + canvas particles)
+     that shows reservations, allows inline edits, deletion, and re-sending
+     confirmation emails. Admin APIs are protected by a static `ADMIN_API_KEY`.
 
 ================================================================================
 
@@ -141,241 +92,134 @@ TECHNICAL ARCHITECTURE
 
 Backend Stack:
 --------------
-Node.js v18+ (JavaScript Runtime)
-├── Express v5.1.0 (Web Framework)
-├── SQLite3 v5.1.7 (Embedded Database)
-├── Nodemailer v7.0.9 (Email Service)
-├── dotenv v17.2.3 (Environment Config)
-└── body-parser (Request Parsing)
+Node.js + Express
+├── sqlite3 (embedded DB)
+├── @sendgrid/mail (optional)
+├── nodemailer (SMTP fallback)
+├── twilio (optional)
+└── dotenv
 
 Frontend Stack:
 ---------------
-HTML5 / CSS3 / Vanilla JavaScript
-├── Bootstrap v5.3.3 (UI Framework)
-├── AOS (Animate On Scroll)
-├── GLightbox (Image Gallery)
-├── Swiper (Touch Slider)
+HTML/CSS/Vanilla JS
+├── Bootstrap (UI)
+├── AOS (animations)
 └── Bootstrap Icons
 
-Database Schema:
-----------------
+Database Schema (high level):
+-----------------------------
 TABLE: reservations
-├── id INTEGER PRIMARY KEY AUTOINCREMENT
-├── name TEXT
-├── email TEXT
-├── phone TEXT
-├── date TEXT (YYYY-MM-DD)
-├── time TEXT (HH:MM)
-├── people INTEGER
-├── occasion TEXT
-├── meal_type TEXT (Veg/Non-Veg/Dinner/Lunch)
-├── payment_mode TEXT (Cash/Online)
-├── payment_status TEXT (pending/not_required/completed)
-├── message TEXT
-├── status TEXT (pending/confirmed/cancelled)
-├── delivery_option TEXT (Dine-in/Delivery/Takeaway)
-├── menu_items TEXT (JSON array)
-├── delivery_address TEXT
-├── delivery_lat REAL (reserved for future GPS)
-├── delivery_lng REAL (reserved for future GPS)
-└── created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+├── id, name, email, phone, date, time, people, occasion, meal_type
+├── payment_mode, payment_status, message, status
+├── delivery_option, menu_items (JSON), delivery_address
+└── created_at
 
-API Endpoints:
---------------
-POST /reserve
-├── Input: Booking/order details (JSON)
-├── Validation: Date/time, table availability, required fields
-├── Output: { success, reservationId, emailSent, message }
-└── Error: { success: false, message }
+TABLE: otps
+├── id, reservation_data (JSON), email, phone
+├── otp (sha256 hash), expires_at
+└── created_at
 
-GET /reservations
-├── Auth: X-API-Key header (ADMIN_API_KEY)
-├── Output: Array of all reservations
-└── Use: Admin dashboard
+API Highlights:
+---------------
+POST /reserve/request-otp  — create OTP, send email/SMS, returns otpId
+POST /reserve/verify-otp   — verify OTP and create reservation (returns
+                             paymentRequired flag when payment is Online)
+POST /reserve             — create reservation directly (no OTP)
+POST /payment/confirm     — mark paid, set status=confirmed, send email
 
-POST /update-status/:id
-├── Auth: X-API-Key header
-├── Input: { status } (pending/confirmed/cancelled)
-└── Output: { success, message }
+Admin (x-api-key protected):
+- GET /api/reservations
+- PUT /api/reservations/:id
+- DELETE /api/reservations/:id
+- POST /api/reservations/:id/resend-confirmation
 
 ================================================================================
 
-BUSINESS LOGIC & VALIDATION
-============================
-
-Multi-Layer Validation Pipeline:
-
-1. Field Validation
-   ✅ Required fields: name, email, phone, date, time, people, meal_type, 
-      payment_mode
-   ✅ Delivery-specific: delivery_address (if delivery_option === 'Delivery')
-   ✅ Format checks: Email regex, phone digits, date format
-
-2. Time Validation (IST-based)
-   Step 1: Get current IST time
-   Step 2: Parse reservation date/time
-   Step 3: Check if reservation < current IST → REJECT (past booking)
-   Step 4: Calculate minimum booking time (current IST + 2 hours)
-   Step 5: Check if reservation < minimum → REJECT (insufficient advance)
-   Step 6: ACCEPT if future + 2+ hours advance
-
-3. Table Availability Check (Dine-in only)
-   Step 1: Query all dine-in reservations for same date (non-cancelled)
-   Step 2: Convert all times to minutes since midnight
-   Step 3: For each existing reservation:
-           Calculate time difference from requested time
-           If difference < 120 minutes → Count as overlapping
-   Step 4: If overlapping_count >= 10 → REJECT (tables full)
-   Step 5: ACCEPT if < 10 tables occupied
-
-Error Messages (User-Facing):
-------------------------------
-- Past Booking: "Cannot book a reservation in the past. Please select a 
-  future date and time (Indian Standard Time)."
-  
-- Insufficient Advance: "Advance booking required. Please book at least 2 
-  hours in advance. Earliest available time: [IST timestamp]"
-  
-- Tables Full: "Sorry, all tables are occupied around [time] on [date]. 
-  Please choose a different time slot (at least 2 hours apart from existing 
-  bookings)."
-  
-- Missing Fields: "Missing required fields." / "Delivery address is required 
-  for delivery orders."
-
-================================================================================
-
-KEY DIFFERENTIATORS
-===================
-
-1. Overlap-Based Capacity (Not Per-Slot)
-   Traditional Systems: Each time slot (6:00 PM, 7:00 PM) has independent 
-   limits - Problem: Could book 10 tables at 6 PM + 10 at 7 PM = 20 tables 
-   needed
-   
-   FoodHub Approach: Considers 2-hour dining duration with overlap detection
-   - Solution: 10 bookings at 6 PM occupy tables until 8 PM, blocking 
-     7:00-7:59 PM slots
-
-2. Mandatory Advance Booking
-   Benefit: No walk-in reservations ensures kitchen has 2+ hours notice for 
-   preparation, inventory management, and staffing adjustments
-
-3. IST-Aware Globally
-   Challenge: Server hosted on Render (could be US/Europe) but restaurant 
-   in India
-   Solution: All time calculations explicitly use IST, ensuring accurate 
-   validation regardless of server timezone
-
-4. Unlimited Future Bookings
-   Use Case: Customer can book birthday party 6 months ahead, wedding 
-   anniversary 1 year ahead
-   Implementation: No maximum date limit, only minimum 2-hour advance 
-   requirement
-
-5. Dual-Purpose Platform
-   Efficiency: Single codebase handles both reservation (capacity-limited) 
-   and ordering (unlimited) use cases with conditional logic
-
-================================================================================
-
-DEPLOYMENT ARCHITECTURE
-=======================
-
-Development Environment:
-------------------------
-Local: http://localhost:3000
-├── Database: reservations.db (SQLite file)
-├── Environment: .env (EMAIL_USER, EMAIL_PASS, ADMIN_API_KEY)
-└── Assets: Served via express.static()
-
-Production Environment:
------------------------
-Platform: Render.com (Free Tier)
-├── URL: https://foodhub-restaurant.onrender.com
-├── Git: Auto-deploy from GitHub main branch
-├── Database: SQLite persisted on Render volume
-├── Environment: Set via Render dashboard
-└── Cold Start: ~30 seconds (free tier limitation)
-
-================================================================================
-
-SCALABILITY & FUTURE ENHANCEMENTS
-==================================
-
-Current Limitations:
---------------------
-- Single restaurant location
-- 10-table fixed capacity
-- No real-time table status
-- Email-only notifications (no SMS)
-- No payment gateway integration
-
-Planned Enhancements:
+DEVELOPER / RUN NOTES
 ---------------------
-1. Multi-Location Support: Extend schema with restaurant_id
-2. Dynamic Capacity: Admin-configurable table count per location
-3. Real-Time Dashboard: WebSocket updates for live table status
-4. SMS Notifications: Twilio integration for order updates
-5. Payment Gateway: Razorpay/Stripe integration for online payments
-6. Mobile App: React Native app consuming existing API
-7. GPS Tracking: Use delivery_lat/lng for driver navigation
-8. Analytics Dashboard: Booking trends, peak hours, revenue tracking
+
+1. Install dependencies: `npm install`
+2. Create `.env` with the following (examples):
+   - ADMIN_API_KEY=admin123
+   - EMAIL_USER=you@gmail.com
+   - EMAIL_PASS=app-password
+   - SENDGRID_API_KEY= (optional)
+   - TWILIO_ACCOUNT_SID= (optional)
+   - TWILIO_AUTH_TOKEN= (optional)
+   - TWILIO_FROM_NUMBER=+1234567890 (optional)
+   - DEV_SHOW_OTP=0 (set to 1 for local OTP debugging)
+3. Start server: `node server.js` (PORT defaults to 3000)
+
+Useful scripts (in `scripts/`):
+- `resend_confirmation.js` — resend confirmation email for a reservation id
+- `send_test_email.js` — test SendGrid or SMTP delivery
+
+================================================================================
+
+SECURITY & DELIVERY CONSIDERATIONS
+---------------------------------
+
+- Admin API uses a static API key. For production, consider session-based
+  authentication or OAuth.
+- Keep secrets out of the repo; store in Render/Heroku/Cloud environment
+  variables and rotate keys if exposed.
+- For reliable email delivery, verify your sending domain and configure
+  SPF/DKIM when using SendGrid.
+
+================================================================================
+
+KNOWN LIMITATIONS & NEXT IMPROVEMENTS
+===================================
+
+1. Persistent Delivery Logs: Add `email_logs` and `sms_logs` tables to record
+   provider responses and retry metadata for audit/retry.
+2. Admin Auth Upgrade: Replace `ADMIN_API_KEY` with session-based auth and
+   role management for multiple admins.
+3. Retry & Queueing: Implement a simple background retry queue for transient
+   send failures (e.g., using Bull or a cron-based retry worker).
+4. Payment Integration: Integrate a payment gateway (Razorpay/Stripe) for
+   seamless online payments and webhook-driven confirmations.
+5. Internationalization: Improve phone parsing and add carrier validation for
+   robust SMS delivery.
 
 ================================================================================
 
 REAL-WORLD USE CASES
 ====================
 
-Scenario 1: Family Birthday Dinner
-- Customer books 2 months ahead for 8 people
-- System accepts (future date, 2+ hours advance)
-- Confirmation email sent with reservation ID
-- Restaurant has ample notice for special arrangements
+Scenario: Family Birthday Dinner
+- Book months ahead; confirmation email and admin notice sent; kitchen
+  prepared in advance.
 
-Scenario 2: Friday Night Rush
-- 10 reservations at 7:00 PM (all tables full)
-- 11th customer tries to book 7:30 PM
-- System rejects: "All tables occupied around 7:30 PM"
-- Suggests booking 9:00 PM (2+ hours after 7:00 PM)
+Scenario: Friday Night Rush
+- Overlap-aware capacity denies overlapping bookings and suggests alternatives.
 
-Scenario 3: Last-Minute Online Order
-- Customer wants delivery NOW
-- System rejects: "Advance booking required. Book at least 2 hours ahead"
-- Customer books for 2 hours later
-- Restaurant receives order with structured address + Maps link
-
-Scenario 4: Corporate Lunch (Takeaway)
-- Office orders 20 items for pickup at 1:00 PM
-- Books at 11:00 AM (2 hours advance)
-- No table capacity check (takeaway doesn't use tables)
-- Kitchen gets 2-hour prep time
+Scenario: Recovery from Missed Email
+- Admin clicks "Resend" in `Admin.html` or calls `/api/reservations/:id/resend-confirmation`.
 
 ================================================================================
 
 PROJECT METADATA
 ================
 
-Lines of Code:        ~3,500+ (excluding vendor libraries)
-File Count:           50+ (HTML, CSS, JS, assets)
-Database Size:        Starts at 20KB, grows with reservations
+Lines of Code:        ~3,800+ (including admin UI enhancements)
+File Count:           55+ (HTML, CSS, JS, assets)
+Database Size:        Starts small, grows with reservations
 API Response Time:    < 100ms (local), < 500ms (production)
-Email Delivery:       < 5 seconds via Gmail SMTP
+Email Delivery:       < 5 seconds via SMTP (typical)
 
-Tested On:            Windows 10/11, Chrome/Edge browsers
-Node Version:         v18.x - v20.x
-Production Uptime:    99.5% (Render free tier limitations)
+Tested On:            Windows 10/11, Chrome/Edge
+Node Version:         v16+ - v22
 
 ================================================================================
 
 SUCCESS METRICS
 ===============
 
-✅ Zero Overbooking: Mathematical guarantee via overlap detection
-✅ 100% Email Delivery: Nodemailer with error handling
-✅ 2-Hour Lead Time: Enforced for all bookings
-✅ IST Accuracy: Timezone-safe regardless of deployment location
-✅ Multi-Device: Responsive design works on mobile/tablet/desktop
+✅ Overlap-based capacity prevents double-booking across adjacent slots
+✅ Payment-confirm flow with idempotent confirmation and re-send support
+✅ OTP delivered via email and (optionally) SMS when Twilio configured
+✅ Polished admin UI with actionable controls (Save/Delete/Resend)
 
 ================================================================================
 
@@ -383,9 +227,8 @@ CREDITS
 =======
 
 Developed By:      Mohammad Adil
-Template Base:     Bootstrap 5.3.3 (customized)
-Inspired By:       Modern restaurant industry needs in India
-Special Thanks:    Open-source community (Express, SQLite, Nodemailer)
+Template Base:     Bootstrap (customized)
+Inspired By:       Practical restaurant operations and small-business needs
 
 ================================================================================
 

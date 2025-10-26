@@ -6,12 +6,21 @@ const nodemailer = require('nodemailer');
 
 async function run() {
   try {
+  // TEMP DEBUG: show what env vars Node actually reads (masked and normalized)
+  const rawPass = process.env.EMAIL_PASS || process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_APP_PASS || process.env.SMTP_PASS;
+  const normPass = rawPass ? rawPass.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/\s+/g, '') : null;
+  console.log('[DEBUG env] EMAIL_USER:', process.env.EMAIL_USER);
+  console.log('[DEBUG env] EMAIL_VAR_NAMES:', Object.keys(process.env).filter(k => /EMAIL|SMTP/i.test(k)));
+  console.log('[DEBUG env] rawPass_len:', rawPass ? rawPass.length : null);
+  console.log('[DEBUG env] normPass_len:', normPass ? normPass.length : null);
+  console.log('[DEBUG env] normPass_preview:', normPass ? (normPass.slice(0,4) + '...' + normPass.slice(-4)) : null);
+
     let transporter;
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    if (process.env.EMAIL_USER && normPass) {
       console.log('Config: using Gmail SMTP (via service gmail)');
       transporter = nodemailer.createTransport({
         service: 'gmail',
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+        auth: { user: process.env.EMAIL_USER, pass: normPass }
       });
     } else {
       console.log('No SMTP config found in environment. Set EMAIL_USER and EMAIL_PASS in .env');

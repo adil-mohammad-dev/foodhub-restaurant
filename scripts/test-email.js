@@ -1,22 +1,18 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 
-const user = process.env.EMAIL_USER;
-const pass = process.env.EMAIL_PASS;
-
-if (!user || !pass) {
-  console.error('EMAIL_USER or EMAIL_PASS missing in .env');
-  process.exit(1);
-}
-
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: { user, pass }
+  auth: { user: (process.env.EMAIL_USER || process.env.SMTP_USER), pass: (function(){
+    const raw = process.env.EMAIL_PASS || process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_APP_PASS || process.env.SMTP_PASS;
+    if (!raw) return null;
+    return raw.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/\s+/g, '');
+  })() }
 });
 
 transporter.verify((err, success) => {
   if (err) {
-    console.error('Transport verify failed:', err.message || err);
+    console.error('Transport verify failed:', err && (err.message || err));
     return process.exit(1);
   }
   console.log('Transport verified');

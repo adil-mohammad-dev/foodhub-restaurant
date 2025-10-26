@@ -19,9 +19,27 @@ const PORT = process.env.PORT || 3000;
 
 // Optional SMTP transporter (fallback)
 let transporter = null;
-if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-  transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
+// Normalize password helper: accept EMAIL_PASS or EMAIL_APP_PASSWORD, strip spaces and surrounding quotes
+function normalizedSmtpPass() {
+  const raw = process.env.EMAIL_PASS || process.env.EMAIL_APP_PASSWORD || process.env.EMAIL_APP_PASS || process.env.SMTP_PASS;
+  if (!raw) return null;
+  // Trim whitespace, strip surrounding quotes, remove internal whitespace (common when copying app passwords shown with spaces)
+  const stripped = raw.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/\s+/g, '');
+  return stripped;
+}
+
+const smtpPass = normalizedSmtpPass();
+if (process.env.EMAIL_USER && smtpPass) {
+  transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.EMAIL_USER, pass: smtpPass }
+  });
   console.log('Configured Gmail SMTP transporter (fallback)');
+  // Log masked preview
+  try {
+    const preview = smtpPass ? (smtpPass.slice(0,4) + '...' + smtpPass.slice(-4)) : 'null';
+    console.log('[SMTP] EMAIL_USER=', process.env.EMAIL_USER, ' EMAIL_PASS_len=', smtpPass.length, ' preview=', preview);
+  } catch (e) {}
   // Run a verify check on startup so logs show whether auth/connectivity works
   transporter.verify()
     .then(() => console.log('[SMTP verify] SMTP transporter verified OK'))

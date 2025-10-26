@@ -154,6 +154,41 @@ document.addEventListener('DOMContentLoaded', () => {
     b.show();
   }
 
+  // Accessibility: ensure modal toggles inert/aria-hidden and manages focus
+  function setupModalA11y() {
+    const modalEl = document.getElementById('cancelModal');
+    if (!modalEl) return;
+    if (modalEl._a11ySetup) return; // avoid duplicate setup
+    modalEl._a11ySetup = true;
+
+    // When modal is shown, remove aria-hidden and try to focus a sensible target inside
+    modalEl.addEventListener('shown.bs.modal', () => {
+      try { modalEl.removeAttribute('aria-hidden'); } catch (e) {}
+      try { modalEl.inert = false; } catch (e) {}
+      try {
+        const focusTarget = modalEl.querySelector('[data-initial-focus], button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (focusTarget && typeof focusTarget.focus === 'function') focusTarget.focus({ preventScroll: true });
+      } catch (e) { /* ignore focus errors */ }
+    });
+
+    // When modal is fully hidden, mark it inert and aria-hidden to remove from AT & tab order
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      try { modalEl.setAttribute('aria-hidden', 'true'); } catch (e) {}
+      try { modalEl.inert = true; } catch (e) {}
+    });
+
+    // Initialize state: if modal not shown, ensure inert/aria-hidden is set
+    try {
+      if (!modalEl.classList.contains('show')) {
+        modalEl.setAttribute('aria-hidden', 'true');
+        try { modalEl.inert = true; } catch (e) {}
+      }
+    } catch (e) { /* ignore init errors */ }
+  }
+
+  // Setup modal accessibility handlers on DOM ready
+  try { setupModalA11y(); } catch (e) { /* ignore */ }
+
   // Handle confirm in modal
   document.addEventListener('DOMContentLoaded', () => {
     const confirmBtn = document.getElementById('confirmCancelBtn');

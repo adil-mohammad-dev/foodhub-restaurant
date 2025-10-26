@@ -22,6 +22,10 @@ let transporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
   console.log('Configured Gmail SMTP transporter (fallback)');
+  // Run a verify check on startup so logs show whether auth/connectivity works
+  transporter.verify()
+    .then(() => console.log('[SMTP verify] SMTP transporter verified OK'))
+    .catch((err) => console.error('[SMTP verify] verification failed:', err && (err.message || err)));
 }
 
 // Unified send helper — use SMTP (nodemailer). SendGrid support removed.

@@ -163,11 +163,33 @@ document.addEventListener('DOMContentLoaded', () => {
       // find modal instance and hide
       const modalEl = document.getElementById('cancelModal');
       try {
-        // Move focus away from modal contents before hiding to avoid aria-hidden focus warnings
+        // Move focus away from modal contents before hiding to avoid aria-hidden focus warnings.
+        // Some browsers/platforms complain if a focused element is hidden via aria-hidden.
+        // Create a temporary, offscreen focusable element, move focus to it, then hide the modal.
         try {
-          if (btn && typeof btn.focus === 'function') btn.focus(); else document.body.focus();
-        } catch (ferr) { /* ignore focus errors */ }
-        bootstrap.Modal.getInstance(modalEl).hide();
+          const tmp = document.createElement('button');
+          tmp.type = 'button';
+          tmp.style.position = 'absolute';
+          tmp.style.left = '-9999px';
+          tmp.style.width = '1px';
+          tmp.style.height = '1px';
+          tmp.style.overflow = 'hidden';
+          tmp.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(tmp);
+          tmp.focus({ preventScroll: true });
+          // hide modal while focus is on the offscreen element
+          bootstrap.Modal.getInstance(modalEl).hide();
+          // restore focus to opener button if available, otherwise leave on body
+          if (btn && typeof btn.focus === 'function') {
+            try { btn.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+          }
+          // cleanup
+          setTimeout(() => { try { tmp.remove(); } catch (_) { /* ignore */ } }, 200);
+        } catch (ferr) { 
+          // fallback: blur active element then hide
+          try { if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch (__) {}
+          try { bootstrap.Modal.getInstance(modalEl).hide(); } catch (e) { /* ignore */ }
+        }
       } catch (e) { /* ignore */ }
       // call updateStatus with reason
       await updateStatus(id, 'cancelled', btn, reason);

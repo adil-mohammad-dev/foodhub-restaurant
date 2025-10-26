@@ -162,7 +162,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const reason = document.getElementById('cancelReason').value || 'Cancelled by admin';
       // find modal instance and hide
       const modalEl = document.getElementById('cancelModal');
-      try { bootstrap.Modal.getInstance(modalEl).hide(); } catch (e) { /* ignore */ }
+      try {
+        // Move focus away from modal contents before hiding to avoid aria-hidden focus warnings
+        try {
+          if (btn && typeof btn.focus === 'function') btn.focus(); else document.body.focus();
+        } catch (ferr) { /* ignore focus errors */ }
+        bootstrap.Modal.getInstance(modalEl).hide();
+      } catch (e) { /* ignore */ }
       // call updateStatus with reason
       await updateStatus(id, 'cancelled', btn, reason);
     });
@@ -182,6 +188,10 @@ document.addEventListener('DOMContentLoaded', () => {
   window.updateReservation = updateReservation;
   window.deleteReservation = deleteReservation;
   window.resendConfirmation = resendConfirmation;
+  // expose functions used by inline onclick handlers
+  window.openCancelModal = openCancelModal;
+  window.confirmReservation = confirmReservation;
+  window.cancelReservation = cancelReservation;
 
   const loadBtn = document.getElementById('load');
   if (loadBtn) loadBtn.addEventListener('click', loadReservations);

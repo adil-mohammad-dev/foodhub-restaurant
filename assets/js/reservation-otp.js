@@ -1,5 +1,47 @@
 document.addEventListener('DOMContentLoaded', () => {
 	console.log('[reservation-otp] script loaded');
+
+	// Quiet noisy extension/runtime unhandled rejection spam that originates
+	// outside of our app (some browser extensions return true from a message
+	// listener and never call sendResponse). This suppression is targeted and
+	// only prevents the specific noisy message while preserving other errors.
+	try {
+		window.addEventListener('unhandledrejection', (e) => {
+			try {
+				const reason = e && e.reason;
+				const text = reason && (reason.message || (typeof reason === 'string' ? reason : String(reason)));
+				if (text && text.includes('A listener indicated an asynchronous response')) {
+					e.preventDefault();
+					console.warn('Suppressed noisy extension/runtime message in reservation-otp:', text);
+				}
+			} catch (inner) { /* ignore */ }
+		});
+	} catch (err) { /* ignore in envs without window.addEventListener */ }
+
+	// Small helper to POST JSON and surface meaningful errors
+	async function postJson(url, data) {
+		try {
+			const res = await fetch(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(data)
+			});
+			// Try to parse JSON safely
+			const text = await res.text().catch(() => null);
+			let json = null;
+			try { json = text ? JSON.parse(text) : null; } catch (e) { json = null; }
+			if (!res.ok) {
+				console.error('[reservation-otp] server error', res.status, text);
+				const err = new Error('Server returned status ' + res.status);
+				err.serverResponse = json || text;
+				throw err;
+			}
+			return json;
+		} catch (err) {
+			console.error('[reservation-otp] postJson error:', err);
+			throw err;
+		}
+	}
 	const form = document.getElementById('reservationForm');
 	if (!form) { console.log('[reservation-otp] reservationForm not found'); return; }
 
@@ -23,25 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 		try {
 			console.log('[reservation-otp] submitting request-otp', body);
-			const res = await fetch('/reserve/request-otp', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			});
-
-			console.log('[reservation-otp] fetch completed', res.status, res.statusText);
-			const json = await res.json().catch(err => { console.error('[reservation-otp] failed to parse JSON', err); return null; });
-
+			const json = await postJson('/reserve/request-otp', body);
 			console.log('[reservation-otp] response JSON:', json);
-
-			if (!res.ok) {
-				console.error('[reservation-otp] server error', res.status, json);
-				alert('Server error: ' + (json && json.message ? json.message : res.statusText));
-				try { localStorage.removeItem('otpInProgress'); } catch (e) {}
-				if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my Table'; }
-				return;
-			}
-
 			if (!json || !json.success) {
 				console.error('[reservation-otp] request-otp failed', json);
 				alert((json && json.message) || 'Failed to request OTP');

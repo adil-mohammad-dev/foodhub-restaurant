@@ -91,6 +91,42 @@ document.addEventListener('DOMContentLoaded', () => {
         // update status cell in UI
         const statusCell = row.querySelectorAll('td')[8];
         if (statusCell) statusCell.innerText = newStatus;
+        // If cancelled, remove the row from the admin table so it's no longer visible
+        if (newStatus === 'cancelled') {
+          try {
+            // Prefer removing the exact row to avoid flicker; if not possible, reload list
+            if (row && row.parentNode) {
+              row.parentNode.removeChild(row);
+              showToast(`Reservation #${id} removed from list`, 'info');
+            } else {
+              // fallback: reload all reservations
+              try { loadReservations(); } catch (e) {}
+            }
+          } catch (e) { try { loadReservations(); } catch (_) {} }
+        }
+        // If server returned email/send info, surface it to admin
+        try {
+          if (data.emailInfo) {
+            if (data.emailInfo.ok) showToast('Cancellation emailed to customer', 'success');
+            else showToast('Cancellation email failed: ' + (data.emailInfo.error || 'unknown'), 'warning');
+          }
+        } catch (e) { /* ignore */ }
+        // If this was a cancel, give a strong visual cue on the modal confirm button so it's obvious in the UI
+        try {
+          if (newStatus === 'cancelled') {
+            const modalConfirm = document.getElementById('confirmCancelBtn');
+            if (modalConfirm) {
+              const originalText = modalConfirm.innerHTML;
+              const originalClass = modalConfirm.className;
+              modalConfirm.innerHTML = 'Cancelled ✓';
+              modalConfirm.className = 'btn btn-success';
+              modalConfirm.disabled = true;
+              setTimeout(() => {
+                try { modalConfirm.innerHTML = originalText; modalConfirm.className = originalClass; modalConfirm.disabled = false; } catch (_) {}
+              }, 1800);
+            }
+          }
+        } catch (e) { /* ignore visual cue failures */ }
       } else {
         showToast('Failed to update: ' + (data.message || 'unknown'), 'danger');
       }
@@ -152,6 +188,11 @@ document.addEventListener('DOMContentLoaded', () => {
     reasonEl.value = '';
     const b = new bootstrap.Modal(modalEl);
     b.show();
+    // Ensure confirm button is enabled only when context is set
+    try {
+      const confirmBtn = document.getElementById('confirmCancelBtn');
+      if (confirmBtn) confirmBtn.disabled = false;
+    } catch (e) { /* ignore */ }
   }
 
   // Accessibility: ensure modal toggles inert/aria-hidden and manages focus
@@ -172,15 +213,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // When modal is fully hidden, mark it inert and aria-hidden to remove from AT & tab order
+    // Note: we avoid setting aria-hidden here because some browsers warn if a focused
+    // descendant remains focused while aria-hidden is applied. Instead we set
+    // aria-hidden/inert proactively when hiding is triggered after moving focus out.
     modalEl.addEventListener('hidden.bs.modal', () => {
-      try { modalEl.setAttribute('aria-hidden', 'true'); } catch (e) {}
-      try { modalEl.inert = true; } catch (e) {}
+      // no-op: aria-hidden/inert are managed by the hide flow to avoid focus races
     });
 
     // Before modal starts hiding, move focus out to avoid aria-hidden focus warnings
+    // keep this handler as a last-resort focus move; primary hide flow will move focus
     modalEl.addEventListener('hide.bs.modal', () => {
       try {
-        // if activeElement is inside modal, move focus to a temporary offscreen element
         if (document.activeElement && modalEl.contains(document.activeElement)) {
           const tmp = document.createElement('button');
           tmp.type = 'button';
@@ -203,6 +246,8 @@ document.addEventListener('DOMContentLoaded', () => {
         modalEl.setAttribute('aria-hidden', 'true');
         try { modalEl.inert = true; } catch (e) {}
       }
+      // disable confirm button until modal is opened with a valid context
+      try { const confirmBtn = document.getElementById('confirmCancelBtn'); if (confirmBtn) confirmBtn.disabled = true; } catch(e){}
     } catch (e) { /* ignore init errors */ }
   }
 
@@ -210,46 +255,51 @@ document.addEventListener('DOMContentLoaded', () => {
   try { setupModalA11y(); } catch (e) { /* ignore */ }
 
   // Handle confirm in modal
-  document.addEventListener('DOMContentLoaded', () => {
+  // Attach handler immediately — the outer DOMContentLoaded wrapper already guarantees DOM readiness.
+  (function attachConfirmHandler() {
     const confirmBtn = document.getElementById('confirmCancelBtn');
-    if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+    if (!confirmBtn) return;
+    confirmBtn.addEventListener('click', async () => {
       const id = _cancelContext.id; const btn = _cancelContext.btn;
+      if (!id) {
+        try { showToast('No reservation selected. Open the cancel action from a reservation row.', 'danger'); } catch(e) { alert('No reservation selected.'); }
+        // hide modal if it's visible
+        try { const modalEl = document.getElementById('cancelModal'); if (bootstrap && modalEl && bootstrap.Modal.getInstance(modalEl)) bootstrap.Modal.getInstance(modalEl).hide(); } catch(e){}
+        return;
+      }
       const reason = document.getElementById('cancelReason').value || 'Cancelled by admin';
       // find modal instance and hide
       const modalEl = document.getElementById('cancelModal');
       try {
         // Move focus away from modal contents before hiding to avoid aria-hidden focus warnings.
-        // Some browsers/platforms complain if a focused element is hidden via aria-hidden.
-        // Create a temporary, offscreen focusable element, move focus to it, then hide the modal.
-        try {
-          const tmp = document.createElement('button');
-          tmp.type = 'button';
-          tmp.style.position = 'absolute';
-          tmp.style.left = '-9999px';
-          tmp.style.width = '1px';
-          tmp.style.height = '1px';
-          tmp.style.overflow = 'hidden';
-          tmp.setAttribute('aria-hidden', 'true');
-          document.body.appendChild(tmp);
-          tmp.focus({ preventScroll: true });
-          // hide modal while focus is on the offscreen element
-          bootstrap.Modal.getInstance(modalEl).hide();
-          // restore focus to opener button if available, otherwise leave on body
-          if (btn && typeof btn.focus === 'function') {
-            try { btn.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
-          }
-          // cleanup
-          setTimeout(() => { try { tmp.remove(); } catch (_) { /* ignore */ } }, 200);
-        } catch (ferr) { 
-          // fallback: blur active element then hide
-          try { if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch (__) {}
-          try { bootstrap.Modal.getInstance(modalEl).hide(); } catch (e) { /* ignore */ }
+        // Focus a temporary offscreen button, set aria-hidden/inert on the modal, then hide.
+        const tmp = document.createElement('button');
+        tmp.type = 'button';
+        tmp.style.position = 'absolute';
+        tmp.style.left = '-9999px';
+        tmp.style.width = '1px';
+        tmp.style.height = '1px';
+        tmp.style.overflow = 'hidden';
+        tmp.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(tmp);
+        // ensure focus moves before setting aria-hidden on the modal
+        try { tmp.focus({ preventScroll: true }); } catch (f) { try { tmp.focus(); } catch(_) {} }
+        // now mark modal as hidden for AT and remove from tab order
+        try { modalEl.setAttribute('aria-hidden', 'true'); } catch (e) {}
+        try { modalEl.inert = true; } catch (e) {}
+        // hide modal while focus is already moved out
+        try { bootstrap.Modal.getInstance(modalEl).hide(); } catch (e) { /* ignore hide errors */ }
+        // restore focus to opener button if available
+        if (btn && typeof btn.focus === 'function') {
+          try { btn.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
         }
+        // cleanup temporary element shortly after
+        setTimeout(() => { try { tmp.remove(); } catch (_) {} }, 200);
       } catch (e) { /* ignore */ }
       // call updateStatus with reason
       await updateStatus(id, 'cancelled', btn, reason);
     });
-  });
+  })();
 
   async function deleteReservation(id) {
     const key = document.getElementById('apiKey').value.trim();

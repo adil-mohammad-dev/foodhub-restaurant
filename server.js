@@ -26,13 +26,33 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   console.log('Configured Gmail SMTP transporter (fallback)');
 }
 
-// Unified send helper
+// Unified send helper — prefer SMTP (nodemailer) and fall back to SendGrid if SMTP not available
 async function sendMailAsync(opts) {
   console.log('[sendMailAsync] called, to=', opts && opts.to);
-  // Prefer SendGrid API (HTTPS) if available
+
+  // 1) If SMTP transporter is configured, use it (preferred)
+  if (transporter) {
+    try {
+      console.log('[sendMailAsync] using SMTP transporter (nodemailer)');
+      return await new Promise((resolve) => {
+        transporter.sendMail(opts, (error, info) => {
+          console.log('[sendMailAsync] SMTP send callback, error=', error, 'info=', info && info.response);
+          if (error) return resolve({ ok: false, error: error && error.message ? error.message : String(error) });
+          return resolve({ ok: true, response: info && info.response });
+        });
+      });
+    } catch (smtpErr) {
+      console.error('[sendMailAsync] SMTP send error:', smtpErr && (smtpErr.message || smtpErr));
+      // If SMTP fails, we'll try SendGrid below (fallback)
+    }
+  } else {
+    console.log('[sendMailAsync] no SMTP transporter configured, attempting SendGrid (if available)');
+  }
+
+  // 2) Fallback to SendGrid API if configured
   if (process.env.SENDGRID_API_KEY && sendgrid && typeof sendgrid.send === 'function') {
     try {
-      console.log('[sendMailAsync] using SendGrid API');
+      console.log('[sendMailAsync] using SendGrid API (fallback)');
       sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
       const msg = { to: opts.to, from: opts.from, subject: opts.subject, text: opts.text, html: opts.html };
       const res = await sendgrid.send(msg);
@@ -40,21 +60,13 @@ async function sendMailAsync(opts) {
       return { ok: true, response: res && res[0] && res[0].statusCode };
     } catch (err) {
       console.error('[sendMailAsync] SendGrid error:', err && (err.message || err));
-      // <<< CHANGED: log full SendGrid error body for debugging
       console.error('[sendMailAsync] SendGrid full error body:', err && err.response && err.response.body);
       return { ok: false, error: err && err.message ? err.message : String(err) };
     }
   }
 
-  // Fallback to nodemailer
-  if (!transporter) return { ok: false, error: 'No SMTP transporter configured' };
-  return new Promise((resolve) => {
-    transporter.sendMail(opts, (error, info) => {
-      console.log('[sendMailAsync] SMTP send callback, error=', error, 'info=', info && info.response);
-      if (error) return resolve({ ok: false, error: error && error.message ? error.message : String(error) });
-      return resolve({ ok: true, response: info && info.response });
-    });
-  });
+  // 3) Neither SMTP nor SendGrid available
+  return { ok: false, error: 'No SMTP transporter configured and no SendGrid API key available' };
 }
 
 // Middleware

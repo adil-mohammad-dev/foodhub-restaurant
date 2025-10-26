@@ -3,6 +3,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultsDiv = document.getElementById('results');
   const toastRoot = document.getElementById('toast');
 
+  // Suppress noisy extension runtime message about async response channels.
+  // Some browser extensions (or the Simple Browser host) log an error when a
+  // listener returns true but never calls sendResponse. This is external to
+  // our app; to avoid flooding the console during testing we quietly suppress
+  // that specific unhandled rejection message while preserving other errors.
+  try {
+    window.addEventListener('unhandledrejection', (e) => {
+      try {
+        const reason = e && e.reason;
+        const text = reason && (reason.message || (typeof reason === 'string' ? reason : String(reason)));
+        if (text && text.includes('A listener indicated an asynchronous response')) {
+          // prevent the noisy default logging (temporary, for testing only)
+          e.preventDefault();
+          console.warn('Suppressed noisy extension/runtime message:', text);
+        }
+      } catch (inner) {
+        /* ignore */
+      }
+    });
+  } catch (e) { /* ignore environments where addEventListener is unavailable */ }
+
   function escapeHtml(s) { if (s === null || s === undefined) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
   function showToast(message, kind = 'info') {

@@ -22,7 +22,7 @@ with Node.js and SQLite. It focuses on real-world restaurant needs: overlap-
 aware table reservations, OTP verification delivered by email and optional
 SMS, payment-aware confirmations, and an attractive animated admin console
 for operations (edit, delete, and re-send confirmations). The application
-prioritizes easy deployment, extensible delivery channels (SendGrid/Twilio),
+   prioritizes easy deployment, extensible delivery channels (SMTP/Twilio),
 and simple admin recovery actions for missed emails.
 
 ================================================================================
@@ -39,7 +39,7 @@ CORE OBJECTIVES
    - Minimum 2-hour lead time (configurable) to ensure kitchen preparedness.
 
 3. Reliable Communications
-   - Primary email delivery via SendGrid with nodemailer SMTP fallback; SMS
+   - Email delivery via nodemailer SMTP (configure EMAIL_USER/EMAIL_PASS); SMS
      via Twilio when configured. Admin can re-send confirmations from UI.
 
 4. Simple Operations UI
@@ -94,8 +94,7 @@ Backend Stack:
 --------------
 Node.js + Express
 ├── sqlite3 (embedded DB)
-├── @sendgrid/mail (optional)
-├── nodemailer (SMTP fallback)
+├── nodemailer (SMTP)
 ├── twilio (optional)
 └── dotenv
 
@@ -143,7 +142,6 @@ DEVELOPER / RUN NOTES
    - ADMIN_API_KEY=admin123
    - EMAIL_USER=you@gmail.com
    - EMAIL_PASS=app-password
-   - SENDGRID_API_KEY= (optional)
    - TWILIO_ACCOUNT_SID= (optional)
    - TWILIO_AUTH_TOKEN= (optional)
    - TWILIO_FROM_NUMBER=+1234567890 (optional)

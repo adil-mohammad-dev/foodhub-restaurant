@@ -2,27 +2,12 @@ require('dotenv').config();
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const nodemailer = require('nodemailer');
-let sendgrid = null;
-try { sendgrid = require('@sendgrid/mail'); } catch (e) { sendgrid = null; }
 const crypto = require('crypto');
 
 const db = new sqlite3.Database(path.join(__dirname, '..', 'reservations.db'));
 
 async function sendMailAsync(opts) {
   console.log('[resend_confirmation] sendMailAsync called, to=', opts && opts.to);
-  if (process.env.SENDGRID_API_KEY && sendgrid && typeof sendgrid.send === 'function') {
-    try {
-      sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
-      const msg = { to: opts.to, from: opts.from, subject: opts.subject, text: opts.text, html: opts.html };
-      const res = await sendgrid.send(msg);
-      console.log('[resend_confirmation] SendGrid response:', res && res[0] && res[0].statusCode);
-      return { ok: true, response: res && res[0] && res[0].statusCode };
-    } catch (err) {
-      console.error('[resend_confirmation] SendGrid error:', err && (err.message || err));
-      return { ok: false, error: err && err.message ? err.message : String(err) };
-    }
-  }
-
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     return { ok: false, error: 'No SMTP credentials configured (EMAIL_USER/EMAIL_PASS)' };
   }

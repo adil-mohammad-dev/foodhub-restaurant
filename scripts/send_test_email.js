@@ -1,5 +1,5 @@
 // Simple test email sender for FoodHub
-// Usage: set SENDGRID_API_KEY or EMAIL_USER/EMAIL_PASS in env (or .env) then:
+// Usage: set EMAIL_USER and EMAIL_PASS in env (or .env) then:
 // node scripts/send_test_email.js recipient@example.com
 
 require('dotenv').config();
@@ -10,27 +10,10 @@ if (!to) {
 }
 
 async function main() {
-  const sg = (() => {
-    try { return require('@sendgrid/mail'); } catch (e) { return null; }
-  })();
-
-  if (process.env.SENDGRID_API_KEY && sg) {
-    sg.setApiKey(process.env.SENDGRID_API_KEY);
-    const msg = { to, from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@example.com', subject: 'FoodHub test email', text: 'This is a test email from FoodHub.' };
-    try {
-      const res = await sg.send(msg);
-      console.log('SendGrid send result:', res && res[0] && res[0].statusCode);
-      process.exit(0);
-    } catch (err) {
-      console.error('SendGrid error:', err && err.message ? err.message : err);
-      process.exit(2);
-    }
-  }
-
-  // Fallback to nodemailer SMTP
+  // Use nodemailer SMTP only
   const nodemailer = require('nodemailer');
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.error('No SendGrid key and no EMAIL_USER/PASS configured. Set one to send email.');
+    console.error('No SMTP credentials configured. Set EMAIL_USER and EMAIL_PASS in .env to send email.');
     process.exit(3);
   }
 

@@ -7,22 +7,14 @@ const nodemailer = require('nodemailer');
 async function run() {
   try {
     let transporter;
-    if (process.env.SENDGRID_API_KEY) {
-      console.log('Config: using SendGrid SMTP (smtp.sendgrid.net:587)');
-      transporter = nodemailer.createTransport({
-        host: 'smtp.sendgrid.net',
-        port: 587,
-        secure: false,
-        auth: { user: 'apikey', pass: process.env.SENDGRID_API_KEY },
-      });
-    } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       console.log('Config: using Gmail SMTP (via service gmail)');
       transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
       });
     } else {
-      console.log('No SMTP config found in environment. Set SENDGRID_API_KEY or EMAIL_USER/EMAIL_PASS in .env');
+      console.log('No SMTP config found in environment. Set EMAIL_USER and EMAIL_PASS in .env');
       process.exit(2);
     }
 

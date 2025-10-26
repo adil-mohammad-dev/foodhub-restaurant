@@ -1,7 +1,6 @@
 /**
  * Clean server.js for FoodHub
- * - Uses SendGrid API when SENDGRID_API_KEY is present
- * - Falls back to nodemailer SMTP when EMAIL_USER/EMAIL_PASS provided
+ * - Uses nodemailer SMTP when EMAIL_USER/EMAIL_PASS provided
  * - DEV_SHOW_OTP=1 returns OTP in response for testing
  */
 
@@ -11,8 +10,7 @@ const path = require('path');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
-let sendgrid = null;
-try { sendgrid = require('@sendgrid/mail'); } catch (e) { sendgrid = null; }
+// SendGrid removed: prefer SMTP via nodemailer using EMAIL_USER/EMAIL_PASS
 const cors = require('cors');
 require('dotenv').config();
 
@@ -26,7 +24,7 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   console.log('Configured Gmail SMTP transporter (fallback)');
 }
 
-// Unified send helper — prefer SMTP (nodemailer) and fall back to SendGrid if SMTP not available
+// Unified send helper — use SMTP (nodemailer). SendGrid support removed.
 async function sendMailAsync(opts) {
   console.log('[sendMailAsync] called, to=', opts && opts.to);
 
@@ -43,30 +41,12 @@ async function sendMailAsync(opts) {
       });
     } catch (smtpErr) {
       console.error('[sendMailAsync] SMTP send error:', smtpErr && (smtpErr.message || smtpErr));
-      // If SMTP fails, we'll try SendGrid below (fallback)
-    }
-  } else {
-    console.log('[sendMailAsync] no SMTP transporter configured, attempting SendGrid (if available)');
-  }
-
-  // 2) Fallback to SendGrid API if configured
-  if (process.env.SENDGRID_API_KEY && sendgrid && typeof sendgrid.send === 'function') {
-    try {
-      console.log('[sendMailAsync] using SendGrid API (fallback)');
-      sendgrid.setApiKey(process.env.SENDGRID_API_KEY);
-      const msg = { to: opts.to, from: opts.from, subject: opts.subject, text: opts.text, html: opts.html };
-      const res = await sendgrid.send(msg);
-      console.log('[sendMailAsync] SendGrid response:', res && res[0] && res[0].statusCode);
-      return { ok: true, response: res && res[0] && res[0].statusCode };
-    } catch (err) {
-      console.error('[sendMailAsync] SendGrid error:', err && (err.message || err));
-      console.error('[sendMailAsync] SendGrid full error body:', err && err.response && err.response.body);
-      return { ok: false, error: err && err.message ? err.message : String(err) };
+      return { ok: false, error: smtpErr && smtpErr.message ? smtpErr.message : String(smtpErr) };
     }
   }
 
-  // 3) Neither SMTP nor SendGrid available
-  return { ok: false, error: 'No SMTP transporter configured and no SendGrid API key available' };
+  // 2) No SMTP configured
+  return { ok: false, error: 'No SMTP transporter configured. Set EMAIL_USER and EMAIL_PASS in environment.' };
 }
 
 // Middleware

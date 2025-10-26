@@ -177,6 +177,26 @@ document.addEventListener('DOMContentLoaded', () => {
       try { modalEl.inert = true; } catch (e) {}
     });
 
+    // Before modal starts hiding, move focus out to avoid aria-hidden focus warnings
+    modalEl.addEventListener('hide.bs.modal', () => {
+      try {
+        // if activeElement is inside modal, move focus to a temporary offscreen element
+        if (document.activeElement && modalEl.contains(document.activeElement)) {
+          const tmp = document.createElement('button');
+          tmp.type = 'button';
+          tmp.style.position = 'absolute';
+          tmp.style.left = '-9999px';
+          tmp.style.width = '1px';
+          tmp.style.height = '1px';
+          tmp.style.overflow = 'hidden';
+          tmp.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(tmp);
+          tmp.focus({ preventScroll: true });
+          setTimeout(() => { try { tmp.remove(); } catch (_) {} }, 200);
+        }
+      } catch (e) { /* ignore */ }
+    });
+
     // Initialize state: if modal not shown, ensure inert/aria-hidden is set
     try {
       if (!modalEl.classList.contains('show')) {

@@ -91,11 +91,7 @@ function normalizePhone(phone) {
   return digits;
 }
 
-function generateOTP(length = 6) {
-  let otp = '';
-  for (let i = 0; i < length; i++) otp += Math.floor(Math.random() * 10).toString();
-  return otp;
-}
+// OTP flow removed: generateOTP and otpAttempts logic deleted
 
 // Optional Twilio client
 let twilioClient = null;
@@ -139,8 +135,7 @@ db.serialize(() => {
 
 // Routes
 app.get('/health', (req, res) => res.json({ success: true, message: 'ok' }));
-// Simple in-memory attempt tracker (per-OTP id) - persisted storage recommended for production
-const otpAttempts = {};
+// OTP flow removed: no OTP attempt tracking
 
 function formatE164(digits) {
   // digits expected to be only numbers (no +). Prefers DEFAULT_COUNTRY_CODE from env or '91'
@@ -151,118 +146,10 @@ function formatE164(digits) {
   return '+' + cc + digits;
 }
 
-// Request OTP (uses hashed OTP in DB and logs send results)
-app.post('/reserve/request-otp', (req, res) => {
-  try {
-    const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = req.body;
-    if (!name || !email || !phone || !date || !time || !people || !payment_mode) return res.status(400).json({ success: false, message: 'Missing required fields.' });
-    if (!isValidEmail(email)) return res.status(400).json({ success: false, message: 'Invalid email.' });
-    const phoneNorm = normalizePhone(phone); if (!phoneNorm) return res.status(400).json({ success: false, message: 'Invalid phone.' });
-
-    // Clean up expired otps (best-effort)
-    try { db.run(`DELETE FROM otps WHERE expires_at <= ?`, [new Date().toISOString()]); } catch (e) { console.error('Failed to cleanup expired otps', e); }
-
-    const otp = generateOTP(6);
-    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    const reservationData = JSON.stringify({ name, email: email.trim(), phone: phoneNorm, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address });
-
-    db.run(`INSERT INTO otps (reservation_data, email, phone, otp, expires_at) VALUES (?,?,?,?,?)`, [reservationData, email.trim(), phoneNorm, otpHash, expiresAt.toISOString()], function(err) {
-      if (err) { console.error('Failed to insert otp', err); return res.status(500).json({ success: false, message: 'Failed to create OTP.' }); }
-      const otpId = this.lastID;
-
-      const mailOptions = { from: `"FoodHub" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: email.trim(), subject: 'Your FoodHub reservation OTP', text: `Your OTP: ${otp} (expires in 10 minutes)` };
-
-      (async () => {
-        try {
-          let emailResult = { ok: false, info: 'skipped' };
-          if (process.env.DEV_SHOW_OTP === '1') {
-            emailResult = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
-            console.log('[request-otp] DEV_SHOW_OTP=1, skipping email send; OTP=', otp);
-          } else {
-            emailResult = await sendMailAsync(mailOptions);
-          }
-
-          let smsResult = { ok: false, error: 'Twilio not configured' };
-          if (twilioClient) {
-            try {
-              const toNumber = formatE164(phoneNorm);
-              const fromNumber = process.env.TWILIO_FROM_NUMBER;
-              console.log('[request-otp] sending SMS to', toNumber, 'from', fromNumber);
-              const msg = await twilioClient.messages.create({ body: `Your FoodHub reservation OTP: ${otp}`, from: fromNumber, to: toNumber });
-              smsResult = { ok: true, sid: msg.sid };
-            } catch (e) {
-              console.error('[request-otp] Twilio send error:', e && e.message ? e.message : e);
-              smsResult = { ok: false, error: e && e.message ? e.message : String(e) };
-            }
-          }
-
-          console.log('[request-otp] emailResult=', emailResult, 'smsResult=', smsResult);
-          const resp = { success: true, otpId, message: 'OTP processed', expiresAt: expiresAt.toISOString(), emailSent: emailResult.ok, emailInfo: emailResult, smsSent: smsResult.ok, smsInfo: smsResult };
-          if (process.env.DEV_SHOW_OTP === '1') resp.otp = otp;
-          return res.json(resp);
-        } catch (e) {
-          console.error('Request OTP internal error:', e);
-          return res.status(500).json({ success: false, message: 'Internal error while sending OTP.' });
-        }
-      })();
-    });
-  } catch (e) { console.error('Request OTP error', e); return res.status(500).json({ success: false, message: 'Internal server error' }); }
-});
+// OTP flow removed: /reserve/request-otp endpoint removed; use POST /reserve directly to create reservation
 
 // Verify OTP and finalize
-app.post('/reserve/verify-otp', (req, res) => {
-  try {
-    const { otpId, otp } = req.body; if (!otpId || !otp) return res.status(400).json({ success: false, message: 'otpId and otp required.' });
-    // rate-limit attempts per otpId
-    otpAttempts[otpId] = (otpAttempts[otpId] || 0) + 1;
-    if (otpAttempts[otpId] > 5) return res.status(429).json({ success: false, message: 'Too many attempts, try again later.' });
-
-    db.get(`SELECT * FROM otps WHERE id = ?`, [otpId], (err, row) => {
-      if (err) { console.error('DB error on select otp:', err); return res.status(500).json({ success: false, message: 'DB error' }); }
-      if (!row) return res.status(404).json({ success: false, message: 'OTP not found.' });
-      if (new Date(row.expires_at) < new Date()) return res.status(400).json({ success: false, message: 'OTP expired.' });
-
-      // Compare hashed OTP
-      const incomingHash = crypto.createHash('sha256').update(String(otp)).digest('hex');
-      if (row.otp !== incomingHash) {
-        console.warn('[verify-otp] invalid otp attempt for id', otpId);
-        return res.status(400).json({ success: false, message: 'Invalid OTP.' });
-      }
-
-      let data; try { data = JSON.parse(row.reservation_data); } catch (e) { console.error('Invalid reservation_data JSON', e); return res.status(500).json({ success: false, message: 'Invalid reservation data.' }); }
-      const { name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, delivery_option, menu_items, delivery_address } = data;
-      const payment_status = payment_mode === 'Cash' ? 'not_required' : 'pending'; const finalDeliveryOption = delivery_option || 'Dine-in'; const menuItemsStr = menu_items ? JSON.stringify(menu_items) : null;
-
-      db.run(`INSERT INTO reservations (name,email,phone,date,time,people,occasion,meal_type,message,payment_mode,payment_status,delivery_option,menu_items,delivery_address)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [name, email, phone, date, time, people, occasion, meal_type, message, payment_mode, payment_status, finalDeliveryOption, menuItemsStr, delivery_address], async function(err) {
-        if (err) { console.error('Failed to insert reservation:', err); return res.status(500).json({ success: false, message: 'Failed to save reservation.' }); }
-        const reservationId = this.lastID;
-        db.run(`DELETE FROM otps WHERE id = ?`, [otpId]);
-
-        // If payment is Online, do not send confirmation email yet — wait for payment completion.
-        const mailOptions = { from: `"FoodHub Restaurant" <${process.env.EMAIL_USER || 'no-reply@example.com'}>`, to: email, subject: '✅ Table Reservation Confirmed - FoodHub Restaurant', text: `Your reservation is confirmed. Reservation ID: ${reservationId}` };
-        let confirmationEmail = { ok: false, info: 'not-sent' };
-        const paymentRequired = String(payment_mode).toLowerCase() === 'online';
-        const paymentAmount = Number(process.env.DEFAULT_ONLINE_AMOUNT || 500);
-
-        if (!paymentRequired) {
-          if (process.env.DEV_SHOW_OTP === '1') confirmationEmail = { ok: false, info: 'DEV_SHOW_OTP=1 - skipped send' };
-          else {
-            try { confirmationEmail = await sendMailAsync(mailOptions); } catch (e) { console.error('Error sending confirmation email:', e); confirmationEmail = { ok: false, error: e && e.message ? e.message : String(e) }; }
-          }
-        } else {
-          confirmationEmail = { ok: false, info: 'awaiting_payment' };
-        }
-
-        // cleanup attempts
-        delete otpAttempts[otpId];
-
-        return res.json({ success: true, reservationId, message: 'Reservation created', paymentRequired, paymentAmount, confirmationEmailSent: confirmationEmail.ok, confirmationEmailInfo: confirmationEmail });
-      });
-    });
-  } catch (e) { console.error('Verify OTP error:', e); return res.status(500).json({ success: false, message: 'Internal server error while verifying OTP.' }); }
-});
+// OTP flow removed: /reserve/verify-otp endpoint removed
 // POST /reserve - accept reservation directly and send confirmation
 app.post('/reserve', (req, res) => {
   try {

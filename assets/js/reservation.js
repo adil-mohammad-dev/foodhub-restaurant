@@ -33,14 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   reservationForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    // If OTP flow is enabled (reservation-otp.js will handle submit), do not proceed here
-    // Skip legacy submit when otpId exists or otpInProgress flag is set
-    if (typeof localStorage !== 'undefined' && !localStorage.getItem('otpId') && !localStorage.getItem('otpInProgress')) {
-      // No otpId and no otp in-progress — proceed to call legacy flow only if reservation-otp didn't intercept
-    } else {
-      // OTP flow is active or in-progress; skip legacy submit
-      return;
-    }
+    // OTP flow removed — always submit the reservation directly
     
     const formData = {
       name: reservationForm.name.value,

@@ -14,6 +14,20 @@ async function run() {
   console.log('[DEBUG env] rawPass_len:', rawPass ? rawPass.length : null);
   console.log('[DEBUG env] normPass_len:', normPass ? normPass.length : null);
   console.log('[DEBUG env] normPass_preview:', normPass ? (normPass.slice(0,4) + '...' + normPass.slice(-4)) : null);
+    // Hex dump of raw and normalized pass to expose hidden characters (printable hex and codepoints)
+    function hexDump(s) {
+      if (!s) return null;
+      const bytes = Buffer.from(String(s));
+      return bytes.toString('hex').match(/.{1,2}/g).join(' ');
+    }
+    function charInfo(s) {
+      if (!s) return null;
+      return Array.from(String(s)).map(ch => `${ch}(${ch.codePointAt(0)})`).join(' ');
+    }
+    console.log('[DEBUG env] rawPass_hex:', hexDump(rawPass));
+    console.log('[DEBUG env] rawPass_chars:', charInfo(rawPass));
+    console.log('[DEBUG env] normPass_hex:', hexDump(normPass));
+    console.log('[DEBUG env] normPass_chars:', charInfo(normPass));
 
     let transporter;
     if (process.env.EMAIL_USER && normPass) {

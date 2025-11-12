@@ -18,24 +18,6 @@
     "text": "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"UTF-8\">\r\n<title>FoodHub - Book Your Table</title>\r\n<!-- Author: Mohammad Adil -->\r\n<link rel=\"stylesheet\" href=\"assets/css/main.css\">\r\n<!-- Favicon -->\r\n<link rel=\"icon\" href=\"/assets/img/favicon.ico\">\r\n</head>\r\n<body>\r\n<h2>Book Your Table</h2>\r\n<form id=\"reservationForm\">\r\n  <input type=\"text\" name=\"name\" placeholder=\"Name\" required><br>\r\n  <input type=\"email\" name=\"email\" placeholder=\"Email\" required><br>\r\n  <input type=\"text\" name=\"phone\" placeholder=\"Phone\" required><br>\r\n  <input type=\"date\" name=\"date\" required><br>\r\n  <input type=\"time\" name=\"time\" required><br>\r\n  <input type=\"number\" name=\"people\" placeholder=\"People\" required><br>\r\n  <select name=\"occasion\" required>\r\n    <option value=\"\">Select Occasion</option>\r\n    <option value=\"Birthday\">Birthday</option>\r\n    <option value=\"Anniversary\">Anniversary</option>\r\n    <option value=\"Other\">Other</option>\r\n  </select><br>\r\n  <select name=\"meal_type\" required>\r\n    <option value=\"\">Select Meal Type</option>\r\n    <option value=\"Veg\">Veg</option>\r\n    <option value=\"Non-Veg\">Non-Veg</option>\r\n  </select><br>\r\n  <select name=\"payment_mode\" required>\r\n    <option value=\"Cash\">Cash</option>\r\n    <option value=\"Online\">Online</option>\r\n  </select><br>\r\n  <textarea name=\"message\" placeholder=\"Message (Optional)\"></textarea><br>\r\n  <button type=\"submit\">Reserve my Table</button>\r\n</form>\r\n\r\n<div id=\"reservation-popup\" class=\"popup\">\r\n  <span id=\"reservation-popup-message\"></span>\r\n  <button id=\"reservation-popup-close\">Close</button>\r\n</div>\r\n\r\n<script src=\"assets/js/reservation-otp.js\"></script>\r\n<script src=\"assets/js/reservation.js\"></script>\r\n</body>\r\n</html>\r\n"
   },
   {
-    "url": "http://localhost:3000/assets/js/reservation-otp.js",
-    "method": "GET",
-    "status": 200,
-    "headers": {
-      "accept-ranges": "bytes",
-      "cache-control": "public, max-age=0",
-      "connection": "keep-alive",
-      "content-length": "2996",
-      "content-type": "text/javascript; charset=utf-8",
-      "date": "Wed, 22 Oct 2025 17:20:01 GMT",
-      "etag": "W/\"bb4-19a0ce32581\"",
-      "keep-alive": "timeout=5",
-      "last-modified": "Wed, 22 Oct 2025 17:06:44 GMT",
-      "x-powered-by": "Express"
-    },
-    "text": "document.addEventListener('DOMContentLoaded', () => {\r\n  console.log('[reservation-otp] script loaded');\r\n  const form = document.getElementById('reservationForm');\r\n  if (!form) { console.log('[reservation-otp] reservationForm not found'); return; }\r\n\r\n  // Use capture phase so this handler runs before other submit listeners\r\n  // Passing `true` as the third argument subscribes to the capture phase\r\n    form.addEventListener('submit', async (e) => {\r\n    e.preventDefault();\r\n  // Prevent other submit handlers (legacy reservation.js) from also running\r\n  if (e.stopImmediatePropagation) e.stopImmediatePropagation();\r\n  // Mark OTP in-progress so legacy handler can detect and skip\r\n  try { localStorage.setItem('otpInProgress', '1'); } catch (e) { /* ignore */ }\r\n    const data = new FormData(form);\r\n    const body = {};\r\n    data.forEach((v, k) => body[k] = v);\r\n\r\n    // Convert people to number\r\n    if (body.people) body.people = Number(body.people);\r\n\r\n    const submitBtn = form.querySelector(\"button[type='submit']\");\r\n    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending OTP...'; }\r\n\r\n    try {\r\n      console.log('[reservation-otp] submitting request-otp', body);\r\n      const res = await fetch('/reserve/request-otp', {\r\n        method: 'POST',\r\n        headers: { 'Content-Type': 'application/json' },\r\n        body: JSON.stringify(body)\r\n      });\r\n\r\n      console.log('[reservation-otp] fetch completed', res.status, res.statusText, res.headers && res.headers.get ? res.headers.get('content-type') : undefined);\r\n\r\n      const text = await res.text();\r\n      let json;\r\n      try { json = JSON.parse(text); } catch (e) { json = null; }\r\n\r\n      if (!res.ok) {\r\n        console.error('[reservation-otp] server error', res.status, text);\r\n        alert('Server error: ' + (json && json.message ? json.message : text));\r\n        try { localStorage.removeItem('otpInProgress'); } catch (e) {}\r\n        if (submitBtn) { submitBtn.disabled = false; submitB"
-  },
-  {
     "url": "http://localhost:3000/assets/js/reservation.js",
     "method": "GET",
     "status": 200,
@@ -108,40 +90,6 @@
     "text": "\u0000\u0000\u0001\u0000\u0003\u0000\u0010\u0010\u0000\u0000\u0001\u0000 \u0000h\u0004\u0000\u00006\u0000\u0000\u0000  \u0000\u0000\u0001\u0000 \u0000(\u0011\u0000\u0000�\u0004\u0000\u000000\u0000\u0000\u0001\u0000 \u0000h&\u0000\u0000�\u0015\u0000\u0000(\u0000\u0000\u0000\u0010\u0000\u0000\u0000 \u0000\u0000\u0000\u0001\u0000 \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000~�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000~�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��44��\u001a\u001a��\u0000\u0000��\u0000\u0000��\u0000\u0000��\n\n��\u001f\u001f��\u0001\u0001��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000����������((��\u0000\u0000��\u0005\u0005��������������22��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000����������MM��\u0000\u0000��\u001b\u001b���������ࡡ������\u001d\u001d��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000����������XX��\u0000\u0000��\u0003\u0003����������\u0000\u0000��zz��pp��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u000b\u000b��\u000b\u000b�ڑ�������pp��\u0000\u0000��\u0000\u0000�洴������..��\u0000\u0000��\b\b��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��99���������������������������������َ���\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0011\u0011��``���������ޝ��ݙ��ܖ�����������\u0001\u0001��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000�Ԁ�������))��\u0000\u0000��\u0000\u0000����������**��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u000f\u000f�����躺��\u0004\u0004��\u0000\u0000�繹������HH��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��MM���������ޜ�����������..��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��ZZ�������������䯯��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0012\u0012��II��66��\u0001\u0001��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000~�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000~\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000(\u0000\u0000\u0000 \u0000\u0000\u0000@\u0000\u0000\u0000\u0001\u0000 \u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000�\u0000\u0000\u0002�\u0000\u0000|�\u0000\u0000�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000�\u0000\u0000|�\u0000\u0000\u0002�\u0000\u0000|�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000|�\u0000\u0000�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000�\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��55�ݛ���aa��\u0007\u0007��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��((��JJ��33��\u0003\u0003��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000��\u0000\u0000�"
   },
   {
-    "url": "http://localhost:3000/reserve/request-otp",
-    "method": "POST",
-    "status": 200,
-    "headers": {
-      "access-control-allow-origin": "*",
-      "connection": "keep-alive",
-      "content-length": "291",
-      "content-type": "application/json; charset=utf-8",
-      "date": "Wed, 22 Oct 2025 17:20:05 GMT",
-      "etag": "W/\"123-TrFN0elEbInb9HmySKfVD89oAVI\"",
-      "keep-alive": "timeout=5",
-      "x-powered-by": "Express"
-    },
-    "text": "<non-text response>"
-  },
-  {
-    "url": "http://localhost:3000/otp.html",
-    "method": "GET",
-    "status": 200,
-    "headers": {
-      "accept-ranges": "bytes",
-      "cache-control": "public, max-age=0",
-      "connection": "keep-alive",
-      "content-length": "881",
-      "content-type": "text/html; charset=utf-8",
-      "date": "Wed, 22 Oct 2025 17:20:05 GMT",
-      "etag": "W/\"371-19a0cee5257\"",
-      "keep-alive": "timeout=5",
-      "last-modified": "Wed, 22 Oct 2025 17:18:56 GMT",
-      "x-powered-by": "Express"
-    },
-    "text": "<!doctype html>\r\n<html lang=\"en\">\r\n<head>\r\n  <meta charset=\"utf-8\">\r\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\r\n  <title>Enter OTP - FoodHub</title>\r\n  <link rel=\"stylesheet\" href=\"assets/css/main.css\">\r\n  <!-- Favicon -->\r\n  <link rel=\"icon\" href=\"/assets/img/favicon.ico\">\r\n</head>\r\n<body>\r\n  <main class=\"container\">\r\n    <h1>Confirm your reservation</h1>\r\n    <p>An OTP has been sent to your email and phone. Please enter it below to confirm your booking.</p>\r\n\r\n    <div id=\"status\"></div>\r\n\r\n    <form id=\"otpForm\">\r\n      <input type=\"hidden\" id=\"otpId\" name=\"otpId\" />\r\n      <label for=\"otp\">OTP</label>\r\n      <input id=\"otp\" name=\"otp\" type=\"text\" maxlength=\"6\" required />\r\n      <button type=\"submit\">Verify OTP</button>\r\n    </form>\r\n\r\n    <p id=\"resMessage\"></p>\r\n  </main>\r\n\r\n  <script src=\"assets/js/otp.js\"></script>\r\n</body>\r\n</html>"
-  },
-  {
     "url": "http://localhost:3000/assets/css/main.css",
     "method": "GET",
     "status": 304,
@@ -156,23 +104,5 @@
       "x-powered-by": "Express"
     },
     "text": "/**\r\n* Template Name: FoodHub\r\n* Updated: Oct 2025 with Bootstrap v5.3.3\r\n* Author: Mohammad Adil\r\n* License: MIT\r\n*/\r\n\r\n/*--------------------------------------------------------------\r\n# Font & Color Variables\r\n# Help: https://bootstrapmade.com/color-system/\r\n--------------------------------------------------------------*/\r\n/* Fonts */\r\n:root {\r\n  --default-font: \"Roboto\",  system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", \"Liberation Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\";\r\n  --heading-font: \"Playfair Display\",  sans-serif;\r\n  --nav-font: \"Poppins\",  sans-serif;\r\n}\r\n\r\n/* Global Colors - The following color variables are used throughout the website. Updating them here will change the color scheme of the entire website */\r\n:root { \r\n  --background-color: #0c0b09; /* Background color for the entire website, including individual sections */\r\n  --default-color: rgba(255, 255, 255, 0.7); /* Default color used for the majority of the text content across the entire website */\r\n  --heading-color: #ffffff; /* Color for headings, subheadings and title throughout the website */\r\n  --accent-color: #cda45e; /* Accent color that represents your brand on the website. It's used for buttons, links, and other elements that need to stand out */\r\n  --surface-color: #29261f; /* The surface color is used as a background of boxed elements within sections, such as cards, icon boxes, or other elements that require a visual separation from the global background. */\r\n  --contrast-color: #0c0b09; /* Contrast color for text, ensuring readability against backgrounds of accent, heading, or default colors. */\r\n}\r\n\r\n/* Nav Menu Colors - The following color variables are used specifically for the navigation menu. They are separate from the global colors to allow for more customization options */\r\n:root {\r\n  --nav-color: #ffffff;  /* The default color of the main navmenu links */\r\n  --nav-hover-color: #cda45e"
-  },
-  {
-    "url": "http://localhost:3000/assets/js/otp.js",
-    "method": "GET",
-    "status": 200,
-    "headers": {
-      "accept-ranges": "bytes",
-      "cache-control": "public, max-age=0",
-      "connection": "keep-alive",
-      "content-length": "1602",
-      "content-type": "text/javascript; charset=utf-8",
-      "date": "Wed, 22 Oct 2025 17:20:05 GMT",
-      "etag": "W/\"642-19a0cc9fb2f\"",
-      "keep-alive": "timeout=5",
-      "last-modified": "Wed, 22 Oct 2025 16:39:14 GMT",
-      "x-powered-by": "Express"
-    },
-    "text": "document.addEventListener('DOMContentLoaded', () => {\r\n  const otpForm = document.getElementById('otpForm');\r\n  const otpIdInput = document.getElementById('otpId');\r\n  const resMessage = document.getElementById('resMessage');\r\n\r\n  const storedOtpId = localStorage.getItem('otpId');\r\n  if (storedOtpId) otpIdInput.value = storedOtpId;\r\n\r\n  console.log('[otp.js] loaded, otpId=', storedOtpId);\r\n\r\n  otpForm.addEventListener('submit', async (e) => {\r\n    e.preventDefault();\r\n    const otp = document.getElementById('otp').value.trim();\r\n    const otpId = otpIdInput.value;\r\n    if (!otpId || !otp) return alert('OTP and otpId required');\r\n\r\n    try {\r\n      console.log('[otp.js] verifying otp', otpId, otp);\r\n      const response = await fetch('/reserve/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otpId: Number(otpId), otp }) });\r\n      const text = await response.text();\r\n      let json;\r\n      try { json = JSON.parse(text); } catch (e) { json = null; }\r\n      if (!response.ok) {\r\n        console.error('[otp.js] server error', response.status, text);\r\n        resMessage.innerText = 'Server error: ' + (json && json.message ? json.message : text);\r\n        return;\r\n      }\r\n      if (!json || !json.success) {\r\n        resMessage.innerText = (json && json.message) || 'Verification failed';\r\n        return;\r\n      }\r\n      resMessage.innerText = 'Reservation confirmed! ID: ' + json.reservationId;\r\n      localStorage.removeItem('otpId');\r\n    } catch (err) {\r\n      console.error(err);\r\n      alert('Network error');\r\n    }\r\n  });\r\n});"
   }
 ]
